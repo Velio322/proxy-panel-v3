@@ -1,0 +1,93 @@
+{
+  "_comment": "Example: VLESS + Hysteria2 + NaiveProxy all sharing port 443 via SNI routing",
+  "description": "Three protocols multiplexed on a single port 443 using HAProxy SNI routing",
+
+  "shared_port": 443,
+
+  "haproxy_acl_rules": [
+    {
+      "sni": "vless.example.com",
+      "backend": "127.0.0.1:10000",
+      "protocol": "VLESS",
+      "description": "VLESS Reality — SNI vless.example.com"
+    },
+    {
+      "sni": "hy2.example.com",
+      "backend": "127.0.0.1:10400",
+      "protocol": "Hysteria2",
+      "description": "Hysteria2 — SNI hy2.example.com"
+    },
+    {
+      "sni": "naive.example.com",
+      "backend": "127.0.0.1:10500",
+      "protocol": "NaiveProxy",
+      "description": "NaiveProxy QUIC — SNI naive.example.com"
+    }
+  ],
+
+  "inbounds": [
+    {
+      "id": "vless-reality",
+      "protocol": "VLESS",
+      "tag": "vless-reality-443",
+      "port": 10000,
+      "listen": "127.0.0.1",
+      "settings": {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "flow": "xtls-rprx-vision",
+        "email": "client1@panel"
+      },
+      "stream": {
+        "security": "reality",
+        "sni": "www.microsoft.com",
+        "fingerprint": "chrome",
+        "publicKey": "YOUR_PUBLIC_KEY_HERE",
+        "shortId": "YOUR_SHORT_ID",
+        "spiderX": "",
+        "dest": "www.microsoft.com:443",
+        "network": "tcp"
+      },
+      "routing": {},
+      "sniffing": true,
+      "enable": true,
+      "portShares": []
+    },
+    {
+      "id": "hy2-443",
+      "protocol": "HYSTERIA2",
+      "tag": "hysteria2-443",
+      "port": 10400,
+      "listen": "127.0.0.1",
+      "settings": {
+        "password": "hy2-password-here",
+        "sni": "hy2.example.com",
+        "obfs": {
+          "type": "salamander",
+          "password": "obfs-password"
+        }
+      },
+      "stream": {},
+      "routing": {},
+      "sniffing": true,
+      "enable": true,
+      "portShares": []
+    },
+    {
+      "id": "naive-443",
+      "protocol": "NAIVEPROXY",
+      "tag": "naive-443",
+      "port": 10500,
+      "listen": "127.0.0.1",
+      "settings": {
+        "proxy": "https://naive.example.com",
+        "proto": "quic",
+        "certDir": "/etc/ssl/certs"
+      },
+      "stream": {},
+      "routing": {},
+      "sniffing": true,
+      "enable": true,
+      "portShares": []
+    }
+  ]
+}

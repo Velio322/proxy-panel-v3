@@ -1,0 +1,33 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Prisma
+server/prisma/migrations/
+
+# Build
+client/dist/
+server/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+postgres_data/
+redis_data/
+prometheus_data/
+grafana_data/
+
+# Temp
+/tmp/
+*.tmp
