@@ -90,8 +90,39 @@ model Reseller {
 }
 
 // ──────────────────────────────────────────────
+// PLANS & BILLING
+// ──────────────────────────────────────────────
+
+enum PlanType {
+  USER
+  RESELLER
+}
+
+model Plan {
+  id            String    @id @default(uuid())
+  name          String
+  description   String?
+  type          PlanType  @default(USER)
+  price         Decimal   @default(0) @db.Decimal(10, 2)
+  currency      String    @default("USD")
+  duration      Int       @default(30)     // days
+  trafficLimit  BigInt    @default(0)       // bytes, 0 = unlimited
+  maxClients    Int?                        // for RESELLER plans
+  maxSpeed      Int?                        // Mbps, null = unlimited
+  protocols     Json      @default("[]")   // allowed protocols
+  sortOrder     Int       @default(0)
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([type, active])
+  @@index([sortOrder])
+}
+
+// ──────────────────────────────────────────────
 // CLIENTS
 // ──────────────────────────────────────────────
+
 
 model Client {
   id            String    @id @default(uuid())
