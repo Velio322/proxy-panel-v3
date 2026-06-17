@@ -15,6 +15,7 @@ CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 log()   { echo -e "${GREEN}  ✓${NC} $1"; }
 warn()  { echo -e "${YELLOW}  !${NC} $1"; }
 
+cd /tmp || true
 [[ $EUID -ne 0 ]] && { echo -e "${RED}  Run as root: sudo bash uninstall.sh${NC}"; exit 1; }
 
 echo -e "\n${RED}${BOLD}╔════════════════════════════════════════════════╗${NC}"
