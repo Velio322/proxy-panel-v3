@@ -8,18 +8,10 @@ Multi-protocol proxy management panel.
 bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh)
 ```
 
-Script will ask for:
-- Domain (e.g. `panel.yourdomain.com`)
-- Admin email
-- Admin username/password
-
-Then it builds containers, starts services, creates database and admin user.
-
-## Worker install
-
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install-worker.sh) -m https://panel.yourdomain.com -t YOUR_TOKEN
-```
+Select mode:
+1. **Panel only** — web dashboard + database
+2. **Node only** — proxy worker (xray/singbox)
+3. **Panel + Node** — all-in-one server
 
 ## Supported protocols
 

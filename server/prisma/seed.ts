@@ -35,7 +35,12 @@ async function main() {
     });
     console.log(`[Seed] Created SUPER_ADMIN user: ${adminUsername}`);
   } else {
-    console.log(`[Seed] User ${adminUsername} already exists`);
+    const hashedPassword = await bcrypt.hash(adminPassword, 12);
+    await prisma.user.update({
+      where: { username: adminUsername },
+      data: { password: hashedPassword, email: adminEmail },
+    });
+    console.log(`[Seed] Updated password for: ${adminUsername}`);
   }
 
   // Create default plans
