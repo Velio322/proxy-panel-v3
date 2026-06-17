@@ -36,27 +36,23 @@ function formToPayload(form: InboundForm) {
 
   let stream: Record<string, any> = {};
   if (isXray) {
-    stream = { security: form.security || 'none', network: form.transport };
+    stream = { security: form.security || 'none', network: form.transport, sni: form.sni, fingerprint: form.fingerprint };
 
     if (form.security === 'tls') {
-      stream.tlsSettings = {
-        sni: form.sni, fingerprint: form.fingerprint,
-        alpn: form.alpn ? form.alpn.split(',').map((a) => a.trim()).filter(Boolean) : [],
-        allowInsecure: form.allowInsecure,
-      };
-      if (form.minVersion) stream.tlsSettings.minVersion = form.minVersion;
-      if (form.maxVersion) stream.tlsSettings.maxVersion = form.maxVersion;
-      if (form.certificates) stream.tlsSettings.certificates = form.certificates;
+      stream.alpn = form.alpn ? form.alpn.split(',').map((a) => a.trim()).filter(Boolean) : [];
+      stream.allowInsecure = form.allowInsecure;
+      if (form.minVersion) stream.minVersion = form.minVersion;
+      if (form.maxVersion) stream.maxVersion = form.maxVersion;
+      if (form.certificates) stream.certificates = form.certificates;
     }
 
     if (form.security === 'reality') {
-      stream.realitySettings = {
-        show: false, dest: form.realityDest, serverNames: form.realityServerNames ? form.realityServerNames.split(',').map((s) => s.trim()) : [form.sni],
-        privateKey: form.realityPrivateKey, shortIds: form.realityShortId ? [form.realityShortId] : [],
-        fingerprint: form.fingerprint,
-      };
-      if (form.realityPublicKey) stream.realitySettings.publicKey = form.realityPublicKey;
-      if (form.realitySpiderX) stream.realitySettings.spiderX = form.realitySpiderX;
+      stream.publicKey = form.realityPublicKey;
+      stream.shortId = form.realityShortId;
+      stream.spiderX = form.realitySpiderX;
+      stream.dest = form.realityDest;
+      stream.serverNames = form.realityServerNames ? form.realityServerNames.split(',').map((s) => s.trim()) : [form.sni];
+      if (form.realityPrivateKey) stream.privateKey = form.realityPrivateKey;
     }
 
     const transportMap: Record<string, string> = { ws: 'wsSettings', grpc: 'grpcSettings', tcp: 'tcpSettings', httpupgrade: 'httpupgradeSettings', xhttp: 'xhttpSettings', h2: 'httpSettings', kcp: 'kcpSettings' };
@@ -159,6 +155,7 @@ export function InboundsPage() {
         protocol: form.protocol, tag: form.tag, port: form.port,
         listen: form.listen, settings, stream,
         sniffing: sniffing?.enabled ?? form.sniffing,
+        routing: { blockTorrent: form.routingBlockTorrent, blockAds: form.routingBlockAds },
         remark: form.remark || undefined, enable: form.enable,
       });
     },

@@ -31,14 +31,24 @@ export function NodesPage() {
   const checkMut = useMutation({
     mutationFn: (id: string) => nodesApi.check(id).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['nodes'] }),
+    onError: (err: any) => alert(`Check failed: ${err?.response?.data?.error || err.message}`),
   });
   
-  const pushMut = useMutation({ mutationFn: (id: string) => nodesApi.pushConfig(id).then((r) => r.data) });
-  const restartMut = useMutation({ mutationFn: (id: string) => nodesApi.restart(id).then((r) => r.data) });
+  const pushMut = useMutation({
+    mutationFn: (id: string) => nodesApi.pushConfig(id).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['nodes'] }),
+    onError: (err: any) => alert(`Push failed: ${err?.response?.data?.error || err.message}`),
+  });
+  const restartMut = useMutation({
+    mutationFn: (id: string) => nodesApi.restart(id).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['nodes'] }),
+    onError: (err: any) => alert(`Restart failed: ${err?.response?.data?.error || err.message}`),
+  });
   
   const deleteMut = useMutation({
     mutationFn: (id: string) => nodesApi.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['nodes'] }); setSelected(new Set()); },
+    onError: (err: any) => alert(`Delete failed: ${err?.response?.data?.error || err.message}`),
   });
 
   const filtered = useMemo(() => nodes?.filter((n) => {

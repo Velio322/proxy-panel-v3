@@ -21,7 +21,7 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
     if (cached) {
       res.set('Content-Type', 'text/plain; charset=utf-8');
       res.set('Profile-Update-Interval', '12');
-      res.set('Subscription-Userinfo', buildSubUserInfo(req));
+      res.set('Subscription-Userinfo', buildSubUserInfo(null));
       return res.send(cached);
     }
 
@@ -833,8 +833,13 @@ function extractMieruSettings(entry: SubscriptionEntry): Record<string, any> {
   }
 }
 
-function buildSubUserInfo(_req: Request): string {
-  return 'upload=0; download=0; total=0; expire=0';
+function buildSubUserInfo(client: any): string {
+  if (!client) return 'upload=0; download=0; total=0; expire=0';
+  const upload = client.netUpload || 0;
+  const download = client.netDownload || 0;
+  const total = client.trafficLimit || 0;
+  const expire = client.expireAt ? Math.floor(new Date(client.expireAt).getTime() / 1000) : 0;
+  return `upload=${upload}; download=${download}; total=${total}; expire=${expire}`;
 }
 
 export default router;

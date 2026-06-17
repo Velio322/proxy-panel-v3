@@ -303,8 +303,48 @@ function defaultForm(): InboundForm {
   return { nodeId: '', protocol: 'VLESS', tag: 'vless-inbound', port: 443, listen: '0.0.0.0', enable: true, remark: '', sniffing: true, security: 'reality', uuid: '', password: '', flow: 'xtls-rprx-vision', method: 'aes-256-gcm', alterId: 0, transport: 'tcp', sni: 'www.microsoft.com', fingerprint: 'chrome', alpn: 'h2,http/1.1', allowInsecure: false, minVersion: '1.2', maxVersion: '1.3', realityPublicKey: '', realityPrivateKey: '', realityShortId: '', realitySpiderX: '', realityDest: 'www.microsoft.com:443', realityServerNames: 'www.microsoft.com', wsPath: '/', wsHost: '', wsMaxEarlyData: 0, wsUseBrowserAgent: false, grpcServiceName: '', grpcMultiMode: false, h2Path: '/', h2Host: '', h2Method: 'PUT', httpupgradePath: '/', httpupgradeHost: '', xhttpPath: '', xhttpMode: 'auto', kcpHeaderType: 'none', kcpSeed: '', certificates: '', sniffingDestOverride: ['http', 'tls'], sniffingMetadataOnly: false, sniffingRouteOnly: false, sniffingExcludedDomains: '', sniffingExcludedIPs: '', naiveProxy: '', naiveProto: 'quic', naiveNonce: '', naivePadding: true, naivePaddingLength: 512, naivePaddingMode: 'random', mieruAuth: 'password', mieruSessionPlacement: 'random', mieruSequencePlacement: 'random', mieruBufferReadSize: 16384, mieruBufferWriteSize: 16384, hy2ObfsType: 'none', hy2ObfsPassword: '', hy2BandwidthUp: '100 mbps', hy2BandwidthDown: '100 mbps', hy2MaxClient: 16, hy2MaxStream: 1024, routingBlockTorrent: false, routingBlockAds: false, portShares: [] };
 }
 function inboundToForm(ib: Inbound): InboundForm {
-  const s = ib.settings as any, st = ib.stream as any, f = defaultForm();
-  return { ...f, id: ib.id, nodeId: ib.nodeId, protocol: ib.protocol as Protocol, tag: ib.tag, port: ib.port, listen: ib.listen, enable: ib.enable, remark: ib.remark || '', sniffing: ib.sniffing, security: (st?.security || 'reality') as Security, uuid: s?.id || '', password: s?.password || '', flow: s?.flow || '', sni: st?.sni || '', fingerprint: st?.fingerprint || 'chrome', transport: (st?.network || 'tcp') as Transport, realityPublicKey: st?.publicKey || '', realityShortId: st?.shortId || '', realitySpiderX: st?.spiderX || '', realityDest: st?.dest || '', realityServerNames: st?.serverNames?.join(', ') || st?.sni || '' };
+  const s = ib.settings as any, st = ib.stream as any, r = ib.routing as any, f = defaultForm();
+  return {
+    ...f,
+    id: ib.id, nodeId: ib.nodeId, protocol: ib.protocol as Protocol, tag: ib.tag, port: ib.port, listen: ib.listen, enable: ib.enable, remark: ib.remark || '',
+    sniffing: ib.sniffing,
+    security: (st?.security || 'none') as Security,
+    uuid: s?.id || '',
+    password: s?.password || '',
+    flow: s?.flow || '',
+    method: s?.method || f.method,
+    alterId: s?.alterId ?? 0,
+    transport: (st?.network || 'tcp') as Transport,
+    sni: st?.sni || '',
+    fingerprint: st?.fingerprint || 'chrome',
+    alpn: Array.isArray(st?.alpn) ? st.alpn.join(',') : (st?.alpn || ''),
+    allowInsecure: st?.allowInsecure ?? false,
+    minVersion: st?.minVersion || f.minVersion,
+    maxVersion: st?.maxVersion || f.maxVersion,
+    certificates: st?.certificates || '',
+    realityPublicKey: st?.publicKey || '',
+    realityPrivateKey: st?.privateKey || '',
+    realityShortId: st?.shortId || '',
+    realitySpiderX: st?.spiderX || '',
+    realityDest: st?.dest || '',
+    realityServerNames: st?.serverNames?.join(', ') || st?.sni || '',
+    wsPath: st?.wsSettings?.path || st?.path || '/',
+    wsHost: st?.wsSettings?.host || st?.host || '',
+    wsMaxEarlyData: st?.wsSettings?.maxEarlyData ?? 0,
+    grpcServiceName: st?.grpcSettings?.serviceName || '',
+    grpcMultiMode: st?.grpcSettings?.multiMode ?? false,
+    h2Path: st?.httpSettings?.path || '/',
+    h2Host: Array.isArray(st?.httpSettings?.host) ? st.httpSettings.host[0] : (st?.httpSettings?.host || ''),
+    h2Method: st?.httpSettings?.method || 'PUT',
+    httpupgradePath: st?.httpupgradeSettings?.path || '/',
+    httpupgradeHost: st?.httpupgradeSettings?.host || '',
+    xhttpPath: st?.xhttpSettings?.path || '',
+    xhttpMode: st?.xhttpSettings?.mode || 'auto',
+    kcpHeaderType: st?.kcpSettings?.header?.type || 'none',
+    kcpSeed: st?.kcpSettings?.seed || '',
+    routingBlockTorrent: r?.blockTorrent ?? false,
+    routingBlockAds: r?.blockAds ?? false,
+  };
 }
 function formToRawJson(f: InboundForm): any {
   const isXray = ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(f.protocol);

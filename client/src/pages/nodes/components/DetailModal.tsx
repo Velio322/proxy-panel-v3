@@ -17,8 +17,14 @@ export function DetailModal({ node: n, onClose }: NodeDetailProps) {
     queryFn: () => nodesApi.getInbounds(n.id).then((r) => r.data),
   });
 
-  const pushMut = useMutation({ mutationFn: () => nodesApi.pushConfig(n.id) });
-  const restartMut = useMutation({ mutationFn: () => nodesApi.restart(n.id) });
+  const pushMut = useMutation({
+    mutationFn: () => nodesApi.pushConfig(n.id),
+    onError: (err: any) => alert(`Push failed: ${err?.response?.data?.error || err.message}`),
+  });
+  const restartMut = useMutation({
+    mutationFn: () => nodesApi.restart(n.id),
+    onError: (err: any) => alert(`Restart failed: ${err?.response?.data?.error || err.message}`),
+  });
 
   const isOnline = n.status === 'ONLINE';
   const isError = n.status === 'ERROR';

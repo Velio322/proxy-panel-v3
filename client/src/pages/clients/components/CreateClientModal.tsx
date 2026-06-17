@@ -43,7 +43,7 @@ export function CreateClientModal({ onClose, inbounds }: ClientCreateProps) {
   const lc = "block text-[11px] font-semibold text-fg-muted uppercase tracking-wider mb-1.5";
 
   if (created) {
-    const subUrl = buildSubUrl(created.subToken || created.subId);
+    const subUrl = buildSubUrl(created.subToken);
     return (
       <Modal onClose={onClose} title={t('clients.clientCreated')} maxW="max-w-md">
         <div className="space-y-4">

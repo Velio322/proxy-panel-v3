@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { 
   Square, CheckSquare, Copy, Check, Eye, 
-  Wifi, Zap, Settings, Server 
+  Wifi, Zap, Settings, Server, RotateCcw, Trash2 
 } from 'lucide-react';
 import { protocolColor, statusColor, statusBg } from '../utils';
 
@@ -24,7 +24,7 @@ interface NodesTableProps {
 
 export function NodesTable({
   nodes, selected, onSelect, onSelectAll, allSelected,
-  onCheck, onPush, onDetail, onEdit
+  onCheck, onPush, onRestart, onDelete, onDetail, onEdit
 }: NodesTableProps) {
   const { t } = useI18n();
   const [copied, setCopied] = useState('');
@@ -126,7 +126,9 @@ export function NodesTable({
                       <button onClick={() => onDetail(n)} className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all shadow-sm border border-transparent hover:border-border" title={t('nodes.details')}><Eye size={14} /></button>
                       <button onClick={() => onCheck(n.id)} className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all shadow-sm border border-transparent hover:border-border" title={t('nodes.checkStatus')}><Wifi size={14} /></button>
                       <button onClick={() => onPush(n.id)} className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all shadow-sm border border-transparent hover:border-border" title={t('nodes.pushConfig')}><Zap size={14} /></button>
+                      <button onClick={() => onRestart(n.id)} className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all shadow-sm border border-transparent hover:border-border" title={t('nodes.restart')}><RotateCcw size={14} /></button>
                       <button onClick={() => onEdit(n)} className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all shadow-sm border border-transparent hover:border-border" title={t('nodes.edit')}><Settings size={14} /></button>
+                      <button onClick={() => onDelete(n.id)} className="p-1.5 rounded-md hover:bg-red-50 text-fg-subtle hover:text-red-600 transition-all shadow-sm border border-transparent hover:border-red-200" title={t('common.delete')}><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
