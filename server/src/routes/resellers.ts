@@ -11,7 +11,6 @@ const createResellerSchema = z.object({
   name: z.string().min(1),
   contactEmail: z.string().email().optional(),
   contactTelegram: z.string().optional(),
-  planId: z.string().optional(),
   maxClients: z.number().min(1).optional().default(100),
   maxNodes: z.number().min(1).optional().default(5),
   trafficLimit: z.number().min(0).optional(),
@@ -25,8 +24,7 @@ router.get('/', requireAdmin, async (req: AuthRequest, res: Response) => {
     const prisma = getPrisma();
     const resellers = await prisma.reseller.findMany({
       include: {
-        plan: { select: { id: true, name: true } },
-        _count: { select: { users: true, clients: true, subscriptions: true } },
+        _count: { select: { users: true, clients: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -48,8 +46,7 @@ router.get('/:id', requireReseller, async (req: AuthRequest, res: Response) => {
     const reseller = await prisma.reseller.findUnique({
       where: { id: req.params.id },
       include: {
-        plan: true,
-        _count: { select: { users: true, clients: true, subscriptions: true } },
+        _count: { select: { users: true, clients: true } },
       },
     });
     if (!reseller) return res.status(404).json({ error: 'Reseller not found' });

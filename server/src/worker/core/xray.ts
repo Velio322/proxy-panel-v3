@@ -93,7 +93,7 @@ export class XrayManager {
       settings: {},
       streamSettings: {},
       sniffing: {
-        enabled: inbound.sniffing !== false,
+        enabled: inbound.sniffing?.enabled ?? true,
         destOverride: ['http', 'tls'],
         routeOnly: true,
       },

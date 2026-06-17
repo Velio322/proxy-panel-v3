@@ -1,8 +1,16 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { InboundConfig, CoreProcess } from '../types';
+
+// ══════════════════════════════════════════════
+// Mieru Manager
+// ══════════════════════════════════════════════
+// Based on Veil and Iceslab reference implementations.
+// Mieru uses JSON config with portBindings for dual
+// TCP/UDP transport on the same port.
+// ══════════════════════════════════════════════
 
 export class MieruManager {
   private processes: Map<string, CoreProcess> = new Map();
@@ -28,23 +36,97 @@ export class MieruManager {
     return null;
   }
 
+  // ══════════════════════════════════════════════
+  // Config Generation (Veil/Iceslab parity)
+  // ══════════════════════════════════════════════
+
   generateConfig(inbound: InboundConfig): any {
     const settings = inbound.settings;
+    const port = inbound.port || 443;
+
+    // Transport: TCP, UDP, or both (Veil feature — dual binding)
+    const transport = (settings.transport || 'tcp').toLowerCase();
+    const portBindings: Array<{ port: number; protocol: string }> = [];
+
+    if (transport === 'both' || transport === 'tcp' || transport === 'tcp,udp') {
+      portBindings.push({ port, protocol: 'TCP' });
+    }
+    if (transport === 'both' || transport === 'udp' || transport === 'tcp,udp') {
+      portBindings.push({ port, protocol: 'UDP' });
+    }
+
+    // If no binding specified, default to TCP
+    if (portBindings.length === 0) {
+      portBindings.push({ port, protocol: 'TCP' });
+    }
+
+    // Users: support multi-user (Veil/Iceslab feature)
+    const users: Array<{ name: string; password: string }> = [];
+    if (settings.users && Array.isArray(settings.users)) {
+      for (const u of settings.users) {
+        users.push({
+          name: u.username || u.name || 'user',
+          password: u.password || crypto.randomBytes(16).toString('hex'),
+        });
+      }
+    } else if (settings.username) {
+      users.push({
+        name: settings.username,
+        password: settings.password || crypto.randomBytes(16).toString('hex'),
+      });
+    } else {
+      users.push({
+        name: 'user',
+        password: settings.password || crypto.randomBytes(16).toString('hex'),
+      });
+    }
+
+    // Logging level
+    const loggingLevel = settings.loggingLevel || 'INFO';
 
     return {
-      port: inbound.port,
-      portRange: settings.portRange || [],
-      socks5: { port: 0 },
-      http: { port: 0 },
-      users: [{
-        name: settings.username || 'user',
-        password: settings.password || crypto.randomBytes(16).toString('hex'),
-      }],
-      authentication: settings.authentication || 'password',
-      bindAddress: inbound.listen || '0.0.0.0',
-      loggingLevel: settings.loggingLevel || 'warn',
+      portBindings,
+      users,
+      loggingLevel,
     };
   }
+
+  // ══════════════════════════════════════════════
+  // Client Config Generation (Veil parity)
+  // ══════════════════════════════════════════════
+
+  generateClientConfig(inbound: InboundConfig, user: { name: string; password: string }): any {
+    const settings = inbound.settings;
+    const domain = settings.domain || settings.sni || 'example.com';
+    const port = inbound.port || 443;
+    const transport = (settings.transport || 'tcp').toLowerCase();
+
+    const portBindings: Array<{ port: number; protocol: string }> = [];
+    if (transport === 'both' || transport === 'tcp' || transport === 'tcp,udp') {
+      portBindings.push({ port, protocol: 'TCP' });
+    }
+    if (transport === 'both' || transport === 'udp' || transport === 'tcp,udp') {
+      portBindings.push({ port, protocol: 'UDP' });
+    }
+    if (portBindings.length === 0) {
+      portBindings.push({ port, protocol: 'TCP' });
+    }
+
+    return {
+      profileName: inbound.tag,
+      user: { name: user.name, password: user.password },
+      servers: [
+        {
+          domainName: domain,
+          portBindings,
+        },
+      ],
+    };
+  }
+
+  // ══════════════════════════════════════════════
+  // Config Write
+  // ══════════════════════════════════════════════
 
   writeConfig(inboundId: string, config: any): string {
     const configPath = path.join(this.configDir, `mieru-${inboundId}.json`);
@@ -53,9 +135,29 @@ export class MieruManager {
     return configPath;
   }
 
+  // ══════════════════════════════════════════════
+  // Validation (Veil feature — mieru check before apply)
+  // ══════════════════════════════════════════════
+
+  validate(configPath: string): { valid: boolean; error?: string } {
+    try {
+      execSync(`${this.binPath} check -c ${configPath}`, {
+        encoding: 'utf-8',
+        timeout: 10000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return { valid: true };
+    } catch (err: any) {
+      return { valid: false, error: err.stderr || err.message };
+    }
+  }
+
+  // ══════════════════════════════════════════════
+  // Process Lifecycle
+  // ══════════════════════════════════════════════
+
   start(inbound: InboundConfig): boolean {
     const key = inbound.id;
-
     this.stopOne(key);
 
     if (!fs.existsSync(this.binPath)) {
@@ -65,6 +167,15 @@ export class MieruManager {
 
     const config = this.generateConfig(inbound);
     const configPath = this.writeConfig(inbound.id, config);
+
+    console.log(`[Mieru:${inbound.tag}] Config: ${config.portBindings.length} bindings, ${config.users.length} users`);
+
+    // Validate before start
+    const validation = this.validate(configPath);
+    if (!validation.valid) {
+      console.error(`[Mieru:${inbound.tag}] Config validation failed: ${validation.error}`);
+      return false;
+    }
 
     try {
       const proc = spawn(this.binPath, ['run'], {
@@ -134,5 +245,16 @@ export class MieruManager {
   restart(inbound: InboundConfig): boolean {
     this.stopOne(inbound.id);
     return this.start(inbound);
+  }
+
+  // ══════════════════════════════════════════════
+  // Subscription Link Generation
+  // ══════════════════════════════════════════════
+
+  generateSubLink(inbound: InboundConfig, user: { name: string; password: string }): string {
+    const settings = inbound.settings;
+    const domain = settings.domain || settings.sni || 'example.com';
+    const port = inbound.port || 443;
+    return `mieru://${user.name}:${user.password}@${domain}:${port}`;
   }
 }

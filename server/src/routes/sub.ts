@@ -12,7 +12,7 @@ const router = Router();
 
 router.get('/:subToken/sub', async (req: Request, res: Response) => {
   try {
-    const { subToken } = req.params;
+    const subToken = req.params.subToken as string;
     const format = ((req.query.flag as string) || 'base64').toLowerCase();
 
     // Check cache
@@ -154,7 +154,7 @@ router.get('/:subToken/info', async (req: Request, res: Response) => {
   try {
     const prisma = getPrisma();
     const client = await prisma.client.findUnique({
-      where: { subToken: req.params.subToken },
+      where: { subToken: req.params.subToken as string },
       select: {
         username: true, uuid: true, trafficLimit: true, usedTraffic: true,
         uploadTraffic: true, downloadTraffic: true, expireAt: true,
@@ -193,7 +193,7 @@ router.post('/:subToken/regenerate', async (req: Request, res: Response) => {
     const { v4: uuidv4 } = require('uuid');
 
     const client = await prisma.client.findUnique({
-      where: { subToken: req.params.subToken },
+      where: { subToken: req.params.subToken as string },
     });
 
     if (!client) return res.status(404).json({ error: 'Client not found' });

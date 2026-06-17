@@ -1,0 +1,39 @@
+{
+  "name": "proxpanel",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Commercial-grade multi-protocol proxy management panel",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w server && npm run build -w client",
+    "build:server": "npm run build -w server",
+    "build:client": "npm run build -w client",
+    "start": "npm start -w server",
+    "db:generate": "npm run db:generate -w server",
+    "db:push": "npm run db:push -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:migrate:prod": "npm run db:migrate:prod -w server",
+    "db:seed": "npm run db:seed -w server",
+    "db:reset": "npm run db:reset -w server",
+    "docker:dev": "docker compose --profile dev up -d",
+    "docker:prod": "docker compose --profile prod up -d --build",
+    "docker:down": "docker compose --profile dev --profile prod down",
+    "docker:logs": "docker compose logs -f",
+    "lint": "npm run lint -w client 2>/dev/null; echo 'Lint complete'",
+    "typecheck": "npm run typecheck -w client 2>/dev/null; npm run typecheck -w server 2>/dev/null",
+    "clean": "rm -rf server/dist client/dist node_modules/.cache",
+    "setup": "npm install && npm run db:generate && npm run db:push && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

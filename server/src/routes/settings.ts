@@ -68,7 +68,7 @@ router.put('/', async (req: AuthRequest, res: Response) => {
     const ops = Object.entries(settings).map(([key, value]) =>
       prisma.systemSetting.upsert({
         where: { key },
-        update: { value },
+        update: { value: value as any },
         create: { key, value: value as any },
       })
     );

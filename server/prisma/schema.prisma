@@ -72,8 +72,6 @@ model Reseller {
   name          String
   contactEmail  String?
   contactTelegram String?
-  planId        String?
-  plan          Plan?     @relation("ResellerPlanRef", fields: [planId], references: [id], onDelete: SetNull)
   maxClients    Int       @default(100)
   maxNodes      Int       @default(5)
   trafficLimit  BigInt    @default(107374182400) // 100GB
@@ -87,81 +85,12 @@ model Reseller {
 
   users         User[]
   clients       Client[]
-  plans         Plan[]     @relation("ResellerPlans")
-  invoices      Invoice[]
-  subscriptions Subscription[]
 
   @@index([active])
 }
 
 // ──────────────────────────────────────────────
-// PLANS & BILLING
-// ──────────────────────────────────────────────
-
-model Plan {
-  id            String    @id @default(uuid())
-  name          String
-  description   String?
-  type          PlanType  @default(USER)
-  price         Decimal   @default(0) @db.Decimal(10, 2)
-  currency      String    @default("USD")
-  duration      Int       @default(30) // days
-  trafficLimit  BigInt    @default(107374182400) // 100GB
-  maxClients    Int       @default(10)
-  maxSpeed      Int?      // Mbps, null = unlimited
-  protocols     Json      @default("[\"VLESS\",\"HYSTERIA2\",\"NAIVEPROXY\",\"MIERU\"]")
-  features      Json      @default("{}")
-  active        Boolean   @default(true)
-  sortOrder     Int       @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  resellerId    String?
-  reseller      Reseller? @relation("ResellerPlans", fields: [resellerId], references: [id], onDelete: SetNull)
-  resellers     Reseller[] @relation("ResellerPlanRef")
-  orders        Order[]
-  subscriptions Subscription[]
-  invoices      Invoice[]
-
-  @@index([active, type])
-}
-
-enum PlanType {
-  USER
-  RESELLER
-}
-
-model Invoice {
-  id            String    @id @default(uuid())
-  resellerId    String
-  reseller      Reseller  @relation(fields: [resellerId], references: [id], onDelete: Cascade)
-  planId        String?
-  plan          Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
-  amount        Decimal   @db.Decimal(12, 2)
-  currency      String    @default("USD")
-  status        InvoiceStatus @default(PENDING)
-  paymentMethod String?   // crypto_pay, stripe, telegram_stars
-  paymentId     String?   // external payment system ID
-  metadata      Json?
-  paidAt        DateTime?
-  expiresAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@index([resellerId, status])
-  @@index([paymentId])
-}
-
-enum InvoiceStatus {
-  PENDING
-  PAID
-  FAILED
-  REFUNDED
-  CANCELLED
-}
-
-// ──────────────────────────────────────────────
-// CLIENTS & SUBSCRIPTIONS
+// CLIENTS
 // ──────────────────────────────────────────────
 
 model Client {
@@ -191,8 +120,6 @@ model Client {
   trafficLogs   TrafficLog[]
   inbounds      ClientInbound[]
   settings      ClientSetting?
-  subscriptions Subscription[]
-  orders        Order[]
 
   @@unique([resellerId, username])
   @@index([subToken])
@@ -218,62 +145,6 @@ enum SubFormat {
   CLASH
   SINGBOX
   ORIGINAL
-}
-
-model Subscription {
-  id            String    @id @default(uuid())
-  clientId      String
-  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  planId        String?
-  plan          Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
-  resellerId    String?
-  reseller      Reseller? @relation(fields: [resellerId], references: [id], onDelete: SetNull)
-  status        SubscriptionStatus @default(ACTIVE)
-  startAt       DateTime  @default(now())
-  expireAt      DateTime?
-  trafficLimit  BigInt    @default(0)
-  usedTraffic   BigInt    @default(0)
-  autoRenew     Boolean   @default(false)
-  paymentId     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@index([clientId, status])
-  @@index([expireAt])
-}
-
-enum SubscriptionStatus {
-  ACTIVE
-  EXPIRED
-  CANCELLED
-  SUSPENDED
-}
-
-model Order {
-  id            String    @id @default(uuid())
-  clientId      String
-  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  planId        String
-  plan          Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
-  amount        Decimal   @db.Decimal(10, 2)
-  currency      String    @default("USD")
-  status        OrderStatus @default(PENDING)
-  paymentMethod String?
-  paymentId     String?
-  metadata      Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@index([clientId, status])
-  @@index([paymentId])
-}
-
-enum OrderStatus {
-  PENDING
-  COMPLETED
-  FAILED
-  CANCELLED
-  REFUNDED
 }
 
 // ──────────────────────────────────────────────
@@ -406,6 +277,43 @@ enum Protocol {
   NAIVEPROXY
   MIERU
   TUIC
+}
+
+// ──────────────────────────────────────────────
+// ROUTING RULES
+// ──────────────────────────────────────────────
+
+model RoutingRule {
+  id            String    @id @default(uuid())
+  name          String
+  description   String?
+  enabled       Boolean   @default(true)
+  priority      Int       @default(0) // Higher = evaluated first
+
+  // Matcher fields (Xray field-rule compatible)
+  type          String    @default("field") // "field" or "logical"
+  domain        String[]  // domain patterns: ["example.com", "geosite:google", "domain:google.com"]
+  ip            String[]  // IP patterns: ["geoip:cn", "192.168.0.0/16"]
+  port          String?   // port range: "80,443" or "1000-2000"
+  sourcePort    String?   // source port range
+  source        String[]  // source IP patterns
+  protocol      String[]  // protocols: ["http", "tls", "bittorrent"]
+  inboundTag    String[]  // inbound tags to match
+
+  // Action
+  outboundTag   String    @default("direct") // "direct", "block", "proxy", or custom outbound tag
+  balancerTag   String?   // balancer tag (if using load balancing)
+
+  // Logical rule support
+  subRules      Json?     // for type="logical", array of sub-rules
+
+  // Metadata
+  nodeScope     String?   // null = global rules, node id = node-specific rules
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([enabled, priority])
+  @@index([nodeScope])
 }
 
 // ──────────────────────────────────────────────

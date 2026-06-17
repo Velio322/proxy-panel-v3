@@ -1,160 +1,149 @@
 import { InboundConfig } from './types';
-import https from 'https';
-import http from 'http';
+import WebSocket from 'ws';
 
 interface MasterClientConfig {
   masterUrl: string;
   nodeSecret: string;
-  pollInterval: number;
+  pollInterval: number; // Kept for compatibility but not used for polling configs
   onConfigUpdate: (inbounds: InboundConfig[]) => void;
   onStatusReport: (status: any) => void;
 }
 
 /**
- * Communicates with the Master server.
- * - Polls for config updates
+ * Communicates with the Master server via WebSockets.
+ * - Receives config updates in real-time
  * - Reports node status and traffic stats
  */
 export class MasterClient {
   private config: MasterClientConfig;
-  private pollTimer: NodeJS.Timeout | null = null;
+  private ws: WebSocket | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private statusTimer: NodeJS.Timeout | null = null;
   private lastConfigHash: string = '';
-  private nodeId: string = '';
+  private isConnected: boolean = false;
 
   constructor(config: MasterClientConfig) {
     this.config = config;
   }
 
   /**
-   * Start polling master for config updates.
+   * Connect to master via WebSocket.
    */
   start(): void {
-    console.log(`[MasterClient] Connecting to ${this.config.masterUrl}`);
+    this.connect();
+  }
 
-    // Initial fetch
-    this.poll();
+  private connect(): void {
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws.terminate();
+    }
 
-    // Set up recurring poll
-    this.pollTimer = setInterval(() => {
-      this.poll();
-    }, this.config.pollInterval);
+    // Convert http/https to ws/wss
+    const wsUrl = this.config.masterUrl.replace(/^http/, 'ws') + '/ws/worker';
 
-    console.log(`[MasterClient] Polling every ${this.config.pollInterval / 1000}s`);
+    console.log(`[MasterClient] Connecting to Master WebSocket: ${wsUrl}`);
+
+    this.ws = new WebSocket(wsUrl, {
+      headers: {
+        'Authorization': `Bearer ${this.config.nodeSecret}`,
+        'X-Node-Secret': this.config.nodeSecret,
+      },
+      rejectUnauthorized: false,
+    });
+
+    this.ws.on('open', () => {
+      console.log('[MasterClient] WebSocket connected');
+      this.isConnected = true;
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+      
+      // Request initial config
+      this.sendEvent('config_request', {});
+
+      // Start periodic status report (e.g. every 30s)
+      this.statusTimer = setInterval(() => {
+        // We trigger the hook which expects to call reportStatus
+        this.config.onStatusReport({}); // The index.ts handles fetching status and calling reportStatus
+      }, this.config.pollInterval);
+    });
+
+    this.ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        this.handleMessage(msg);
+      } catch (error) {
+        console.error('[MasterClient] Failed to parse message:', error);
+      }
+    });
+
+    this.ws.on('close', () => {
+      console.log('[MasterClient] WebSocket disconnected');
+      this.handleDisconnect();
+    });
+
+    this.ws.on('error', (error) => {
+      console.error(`[MasterClient] WebSocket error: ${error.message}`);
+      // close event will fire next
+    });
+  }
+
+  private handleDisconnect(): void {
+    this.isConnected = false;
+    if (this.statusTimer) clearInterval(this.statusTimer);
+    
+    // Reconnect with backoff
+    this.reconnectTimer = setTimeout(() => {
+      console.log('[MasterClient] Reconnecting...');
+      this.connect();
+    }, 5000);
+  }
+
+  private handleMessage(msg: { event: string; payload: any }): void {
+    switch (msg.event) {
+      case 'config_update':
+        if (msg.payload && msg.payload.inbounds) {
+          const hash = this.hashConfig(msg.payload.inbounds);
+          if (hash !== this.lastConfigHash) {
+            console.log('[MasterClient] Real-time config update received');
+            this.lastConfigHash = hash;
+            this.config.onConfigUpdate(msg.payload.inbounds);
+          }
+        }
+        break;
+      default:
+        console.log(`[MasterClient] Unknown event received: ${msg.event}`);
+    }
+  }
+
+  private sendEvent(event: string, payload: any): void {
+    if (this.ws && this.isConnected) {
+      this.ws.send(JSON.stringify({ event, payload }));
+    }
   }
 
   stop(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
+    if (this.ws) {
+      this.ws.close();
     }
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.statusTimer) clearInterval(this.statusTimer);
   }
 
   /**
-   * Poll master for latest config.
-   */
-  private async poll(): Promise<void> {
-    try {
-      // Get config from master
-      const config = await this.request<any>('GET', '/api/v1/nodes/self/config');
-
-      if (config && config.inbounds) {
-        const hash = this.hashConfig(config.inbounds);
-
-        if (hash !== this.lastConfigHash) {
-          console.log('[MasterClient] Config changed, updating...');
-          this.lastConfigHash = hash;
-          this.config.onConfigUpdate(config.inbounds);
-        }
-      }
-
-      // Report status
-      const status = await this.request<any>('GET', '/api/v1/nodes/self/status');
-      if (status) {
-        this.nodeId = status.nodeId;
-        this.config.onStatusReport(status);
-      }
-    } catch (error: any) {
-      // Silently retry on next poll — master might be temporarily unreachable
-      if (error.code !== 'ECONNREFUSED') {
-        console.error(`[MasterClient] Poll error: ${error.message}`);
-      }
-    }
-  }
-
-  /**
-   * Report traffic stats to master.
+   * Report traffic stats to master via WS.
    */
   async reportTraffic(stats: Record<string, { upload: number; download: number }>): Promise<void> {
-    try {
-      await this.request('POST', '/api/v1/nodes/self/traffic', { stats });
-    } catch (error: any) {
-      console.error(`[MasterClient] Traffic report error: ${error.message}`);
-    }
+    this.sendEvent('traffic_report', { stats });
   }
 
   /**
-   * Report status to master.
+   * Report status to master via WS.
    */
   async reportStatus(status: any): Promise<void> {
-    try {
-      await this.request('POST', '/api/v1/nodes/self/status', status);
-    } catch (error: any) {
-      console.error(`[MasterClient] Status report error: ${error.message}`);
-    }
-  }
-
-  /**
-   * Request config update from master for specific node.
-   */
-  async fetchConfig(): Promise<InboundConfig[]> {
-    const response = await this.request<any>('GET', '/api/v1/nodes/self/config');
-    return response?.inbounds || [];
-  }
-
-  private request<T>(method: string, path: string, body?: any): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const url = new URL(path, this.config.masterUrl);
-      const isHttps = url.protocol === 'https:';
-      const client = isHttps ? https : http;
-
-      const postData = body ? JSON.stringify(body) : undefined;
-
-      const options: https.RequestOptions = {
-        hostname: url.hostname,
-        port: url.port || (isHttps ? 443 : 80),
-        path: url.pathname + url.search,
-        method,
-        headers: {
-          'Authorization': `Bearer ${this.config.nodeSecret}`,
-          'Content-Type': 'application/json',
-          'X-Node-Secret': this.config.nodeSecret,
-          ...(postData ? { 'Content-Length': Buffer.byteLength(postData) } : {}),
-        },
-        timeout: 10000,
-        rejectUnauthorized: false,
-      };
-
-      const req = client.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(data));
-          } catch {
-            reject(new Error(`Invalid JSON response from ${url.pathname}`));
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error(`Timeout: ${method} ${path}`));
-      });
-
-      if (postData) req.write(postData);
-      req.end();
-    });
+    this.sendEvent('status_report', status);
   }
 
   private hashConfig(inbounds: InboundConfig[]): string {

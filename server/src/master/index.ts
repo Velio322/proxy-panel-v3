@@ -1,8 +1,10 @@
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import { register } from 'prom-client';
 import { config } from '../config';
 import { getPrisma, closePrisma } from '../lib/prisma';
@@ -15,17 +17,20 @@ import nodeRoutes from '../routes/nodes';
 import inboundRoutes from '../routes/inbounds';
 import dashboardRoutes from '../routes/dashboard';
 import subRoutes from '../routes/sub';
-import planRoutes from '../routes/plans';
-import billingRoutes from '../routes/billing';
 import resellerRoutes from '../routes/resellers';
 import auditRoutes from '../routes/audit';
 import settingsRoutes from '../routes/settings';
 import backupRoutes from '../routes/backup';
+import routingRoutes from '../routes/routing';
 import nodeApiRoutes from '../routes/node-api';
 import { initTelegramBot, stopTelegramBot } from '../services/telegramBot';
 import { startScheduler } from '../services/scheduler';
+import { getTrafficBatcher } from '../lib/traffic-batcher';
+import { createServer } from 'http';
+import { getWorkerSocketManager } from '../ws/worker-socket';
 
 const app = express();
+const server = createServer(app);
 
 // Security
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -38,7 +43,7 @@ app.use(compression());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.max,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
@@ -48,12 +53,13 @@ app.use(limiter);
 // Stricter auth rate limit
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   message: { error: 'Too many login attempts' },
 });
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 
 // Metrics middleware
 app.use((req, res, next) => {
@@ -75,12 +81,11 @@ app.use('/api/v1/nodes', nodeRoutes);
 app.use('/api/v1/inbounds', inboundRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/client', subRoutes);
-app.use('/api/v1/plans', planRoutes);
-app.use('/api/v1/billing', billingRoutes);
 app.use('/api/v1/resellers', resellerRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/backup', backupRoutes);
+app.use('/api/v1/routing', routingRoutes);
 
 // Node-to-Master API (worker daemons poll this)
 app.use('/api/v1/nodes/self', nodeApiRoutes);
@@ -97,6 +102,10 @@ if (config.prometheus.enabled) {
   });
 }
 
+// Serve frontend static files
+const clientDist = path.resolve(__dirname, '../../../client/dist');
+app.use(express.static(clientDist));
+
 // Health check
 app.get('/api/health', async (req, res) => {
   try {
@@ -108,6 +117,14 @@ app.get('/api/health', async (req, res) => {
   } catch (error: any) {
     res.status(503).json({ status: 'error', error: error.message });
   }
+});
+
+// SPA fallback - serve index.html for non-API routes
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.sendFile(path.join(clientDist, 'index.html'));
 });
 
 async function startServer() {
@@ -122,7 +139,17 @@ async function startServer() {
     initTelegramBot();
     startScheduler();
 
-    app.listen(config.master.port, () => {
+    // Initialize Worker WebSocket Manager
+    const wsManager = getWorkerSocketManager();
+    wsManager.init(server);
+
+    // Start traffic batcher (accumulates writes, flushes to DB periodically)
+    const batcher = getTrafficBatcher();
+    batcher.start();
+    batcher.on('flushed', ({ count }) => console.log(`[Batcher] Flushed ${count} traffic entries`));
+    batcher.on('error', (err) => console.error(`[Batcher] Error: ${err.message}`));
+
+    server.listen(config.master.port, '0.0.0.0', () => {
       console.log(`[Master] API server running on port ${config.master.port}`);
       if (config.prometheus.enabled) {
         console.log(`[Metrics] Prometheus endpoint on /metrics`);
@@ -137,6 +164,8 @@ async function startServer() {
 process.on('SIGTERM', async () => {
   console.log('[Master] Shutting down...');
   stopTelegramBot();
+  const batcher = getTrafficBatcher();
+  await batcher.stop();
   await closeRedis();
   await closePrisma();
   process.exit(0);
@@ -145,6 +174,8 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('[Master] Shutting down...');
   stopTelegramBot();
+  const batcher = getTrafficBatcher();
+  await batcher.stop();
   await closeRedis();
   await closePrisma();
   process.exit(0);

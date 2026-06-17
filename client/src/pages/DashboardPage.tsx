@@ -1,16 +1,26 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { dashboardApi } from '@/lib/api';
+import { dashboardApi, nodesApi } from '@/lib/api';
 import { formatBytes } from '@/lib/utils';
-import {
-  Users, Server, Wifi, WifiOff, ArrowUp, ArrowDown,
-  TrendingUp, Clock, AlertTriangle, Activity
-} from 'lucide-react';
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer
-} from 'recharts';
+import { useI18n } from '@/i18n';
+import { Users, Server, Activity, TrendingUp, ArrowUpRight, Clock } from 'lucide-react';
+import { KPICard, KPISkeleton } from './dashboard/components/KPICard';
+import { SystemHealthCard } from './dashboard/components/SystemHealthCard';
+import { QuickActionsPanel } from './dashboard/components/QuickActionsPanel';
+import { TrafficChart } from './dashboard/components/TrafficChart';
+
+const ACTION_COLORS: Record<string, string> = {
+  LOGIN:  'var(--success)',
+  LOGOUT: 'var(--fg-subtle)',
+  CREATE: 'var(--accent)',
+  UPDATE: 'var(--warning)',
+  DELETE: 'var(--danger)',
+};
 
 export function DashboardPage() {
+  const { t } = useI18n();
+  const [trafficPeriod, setTrafficPeriod] = useState(7);
+
   const { data: overview, isLoading } = useQuery({
     queryKey: ['dashboard-overview'],
     queryFn: () => dashboardApi.getOverview().then((r) => r.data),
@@ -18,185 +28,201 @@ export function DashboardPage() {
   });
 
   const { data: trafficChart } = useQuery({
-    queryKey: ['dashboard-traffic'],
-    queryFn: () => dashboardApi.getTrafficChart({ days: 7 }).then((r) => r.data),
+    queryKey: ['dashboard-traffic', trafficPeriod],
+    queryFn: () => dashboardApi.getTrafficChart({ days: trafficPeriod }).then((r) => r.data),
   });
 
   const { data: topClients } = useQuery({
     queryKey: ['dashboard-top-clients'],
-    queryFn: () => dashboardApi.getTopClients({ days: 7, limit: 5 }).then((r) => r.data),
+    queryFn: () => dashboardApi.getTopClients({ days: 7, limit: 6 }).then((r) => r.data),
   });
 
   const { data: recentAudit } = useQuery({
     queryKey: ['dashboard-recent-audit'],
-    queryFn: () => dashboardApi.getRecentAudit({ limit: 8 }).then((r) => r.data),
+    queryFn: () => dashboardApi.getRecentAudit({ limit: 6 }).then((r) => r.data),
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
-      </div>
-    );
-  }
+  const { data: nodes } = useQuery({
+    queryKey: ['nodes-list'],
+    queryFn: () => nodesApi.getAll().then((r) => r.data),
+    refetchInterval: 30000,
+  });
 
-  const stats = overview
-    ? [
-        { label: 'Total Clients', value: overview.clients.total, sub: `${overview.clients.active} active`, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-        { label: 'Nodes Online', value: `${overview.nodes.online}/${overview.nodes.total}`, sub: `${overview.inbounds.total} inbounds`, icon: Server, color: 'text-green-400', bg: 'bg-green-500/10' },
-        { label: 'Today Traffic', value: formatBytes(Number(overview.traffic.today.upload) + Number(overview.traffic.today.download)), sub: `↑${formatBytes(Number(overview.traffic.today.upload))} ↓${formatBytes(Number(overview.traffic.today.download))}`, icon: Activity, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-        { label: 'Month Traffic', value: formatBytes(Number(overview.traffic.month.upload) + Number(overview.traffic.month.download)), sub: `${overview.subscriptions.active} subscriptions`, icon: TrendingUp, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-      ]
-    : [];
+  const todayUp   = Number(overview?.traffic?.today?.upload   || 0);
+  const todayDown = Number(overview?.traffic?.today?.download || 0);
+  const monthUp   = Number(overview?.traffic?.month?.upload   || 0);
+  const monthDown = Number(overview?.traffic?.month?.download || 0);
+
+  const kpis = overview ? [
+    {
+      label: t('dashboard.totalClients'),
+      value: overview.clients.total,
+      sub: `${overview.clients.active} active, ${overview.clients.banned} banned`,
+      icon: <Users size={15} />,
+      accentColor: 'var(--accent)',
+    },
+    {
+      label: t('dashboard.nodesOnline'),
+      value: `${overview.nodes.online}/${overview.nodes.total}`,
+      sub: `${overview.inbounds.total} inbounds configured`,
+      icon: <Server size={15} />,
+      accentColor: 'var(--success)',
+    },
+    {
+      label: t('dashboard.todayTraffic'),
+      value: formatBytes(todayUp + todayDown),
+      sub: `↑ ${formatBytes(todayUp)} · ↓ ${formatBytes(todayDown)}`,
+      icon: <Activity size={15} />,
+      accentColor: '#06b6d4',
+    },
+    {
+      label: t('dashboard.monthTraffic'),
+      value: formatBytes(monthUp + monthDown),
+      sub: `Expiring today: ${overview.expiringToday || 0}`,
+      icon: <TrendingUp size={15} />,
+      accentColor: 'var(--accent-2)',
+    },
+  ] : [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-sm text-gray-400 mt-1">System overview and real-time stats</p>
-      </div>
+    <div className="space-y-5">
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => (
-          <div
-            key={stat.label}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-gray-400">{stat.label}</span>
-              <div className={`p-2 rounded-lg ${stat.bg}`}>
-                <stat.icon size={18} className={stat.color} />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-white">{stat.value}</div>
-            <div className="text-xs text-gray-500 mt-1">{stat.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Traffic Chart */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Traffic (7 days)</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Upload and download per day</p>
-          </div>
-          <div className="flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
-              Upload
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-cyan-500" />
-              Download
-            </span>
-          </div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-[18px] font-bold" style={{ color: 'var(--fg)' }}>
+            {t('dashboard.title')}
+          </h1>
+          <p className="text-[13px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+            {t('dashboard.subtitle')}
+          </p>
         </div>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trafficChart || []}>
-              <defs>
-                <linearGradient id="uploadGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="downloadGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#06b6d4" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis
-                dataKey="day"
-                stroke="#6b7280"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(v) => new Date(v).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
-              />
-              <YAxis
-                stroke="#6b7280"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(v) => formatBytes(v, 0)}
-              />
-              <Tooltip
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
-                labelFormatter={(v) => new Date(v).toLocaleDateString()}
-                formatter={(v: any, name: string) => [formatBytes(v), name === 'upload' ? 'Upload' : 'Download']}
-              />
-              <Area type="monotone" dataKey="upload" stroke="#8b5cf6" fill="url(#uploadGrad)" strokeWidth={2} />
-              <Area type="monotone" dataKey="download" stroke="#06b6d4" fill="url(#downloadGrad)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="hidden sm:flex items-center gap-2 text-[12px]"
+          style={{ color: 'var(--fg-muted)' }}>
+          <Clock size={13} />
+          {new Date().toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}
         </div>
       </div>
 
-      {/* Bottom row: Top Clients + Recent Audit */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* KPIs */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[...Array(4)].map((_, i) => <KPISkeleton key={i} />)}
+        </div>
+      ) : overview ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {kpis.map((kpi) => (
+            <KPICard key={kpi.label} {...kpi} />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Chart + Health */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <TrafficChart data={trafficChart || []} period={trafficPeriod} onPeriodChange={setTrafficPeriod} />
+        {nodes && <SystemHealthCard nodes={nodes} />}
+      </div>
+
+      {/* Bottom row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
         {/* Top Clients */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Top Clients (7 days)</h2>
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--fg)' }}>
+              {t('dashboard.topClients')}
+            </h3>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: 'var(--bg-raised)', color: 'var(--fg-subtle)', border: '1px solid var(--border)' }}>
+              7D
+            </span>
+          </div>
           <div className="space-y-3">
-            {topClients && topClients.length > 0 ? (
-              topClients.map((tc: any, i: number) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-medium text-gray-400">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-200 truncate">
-                      {tc.client?.username || 'Unknown'}
+            {topClients && topClients.length > 0
+              ? topClients.map((tc: any, i: number) => {
+                const total = Number(tc._sum?.upload || 0) + Number(tc._sum?.download || 0);
+                const max = Number(topClients[0]._sum?.upload || 0) + Number(topClients[0]._sum?.download || 0) || 1;
+                const pct = (total / max) * 100;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[11px] font-bold w-4 shrink-0"
+                        style={{ color: i < 3 ? 'var(--accent)' : 'var(--fg-subtle)' }}>
+                        {i + 1}
+                      </span>
+                      <span className="text-[13px] font-medium flex-1 truncate" style={{ color: 'var(--fg)' }}>
+                        {tc.client?.username || 'Unknown'}
+                      </span>
+                      <span className="text-[11px] font-mono shrink-0" style={{ color: 'var(--fg-muted)' }}>
+                        {formatBytes(total)}
+                      </span>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      ↑ {formatBytes(Number(tc._sum?.upload || 0))} · ↓ {formatBytes(Number(tc._sum?.download || 0))}
+                    <div className="ml-6 progress-bar">
+                      <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
-                  <div className="text-sm font-medium text-gray-300">
-                    {formatBytes(Number(tc._sum?.upload || 0) + Number(tc._sum?.download || 0))}
-                  </div>
+                );
+              })
+              : (
+                <div className="py-6 text-center text-[13px]" style={{ color: 'var(--fg-subtle)' }}>
+                  {t('dashboard.noData')}
                 </div>
-              ))
-            ) : (
-              <div className="text-sm text-gray-500 text-center py-8">No data yet</div>
-            )}
+              )}
           </div>
         </div>
 
-        {/* Recent Audit */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Recent Activity</h2>
+        {/* Recent Activity */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--fg)' }}>
+              {t('dashboard.recentActivity')}
+            </h3>
+            <ArrowUpRight size={14} style={{ color: 'var(--fg-subtle)' }} />
+          </div>
           <div className="space-y-3">
-            {recentAudit && recentAudit.length > 0 ? (
-              recentAudit.map((log: any) => (
-                <div key={log.id} className="flex items-start gap-3">
-                  <div className={`mt-0.5 p-1.5 rounded-md ${
-                    log.action === 'LOGIN' ? 'bg-green-500/10 text-green-400' :
-                    log.action === 'DELETE' ? 'bg-red-500/10 text-red-400' :
-                    log.action === 'CREATE' ? 'bg-blue-500/10 text-blue-400' :
-                    'bg-gray-800 text-gray-400'
-                  }`}>
-                    {log.action === 'LOGIN' ? <Wifi size={12} /> :
-                     log.action === 'DELETE' ? <AlertTriangle size={12} /> :
-                     <Activity size={12} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-gray-300">
-                      <span className="font-medium text-gray-200">{log.user?.username || 'System'}</span>
-                      {' '}
-                      <span className="text-gray-500">{log.action.toLowerCase()}</span>
-                      {' '}
-                      <span className="text-gray-400">{log.resource}</span>
+            {recentAudit && recentAudit.length > 0
+              ? recentAudit.map((log: any) => {
+                const actionColor = ACTION_COLORS[log.action] || 'var(--fg-subtle)';
+                return (
+                  <div key={log.id} className="flex items-start gap-2.5">
+                    <div className="mt-1.5 shrink-0">
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: actionColor }} />
                     </div>
-                    <div className="text-xs text-gray-600 mt-0.5">
-                      {new Date(log.createdAt).toLocaleString()}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px]" style={{ color: 'var(--fg)' }}>
+                        <span className="font-semibold">{log.user?.username || 'System'}</span>
+                        {' '}
+                        <span className="font-medium lowercase" style={{ color: actionColor }}>{log.action}</span>
+                        {' '}
+                        <span style={{ color: 'var(--fg-muted)' }}>{log.resource}</span>
+                      </div>
+                      <div className="text-[11px] mt-0.5 flex items-center gap-1.5"
+                        style={{ color: 'var(--fg-subtle)' }}>
+                        <Clock size={10} />
+                        {new Date(log.createdAt).toLocaleString('en', {
+                          hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric'
+                        })}
+                        {log.ip && (
+                          <>
+                            <span>·</span>
+                            <span className="font-mono">{log.ip}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
+                );
+              })
+              : (
+                <div className="py-6 text-center text-[13px]" style={{ color: 'var(--fg-subtle)' }}>
+                  {t('dashboard.noActivity')}
                 </div>
-              ))
-            ) : (
-              <div className="text-sm text-gray-500 text-center py-8">No activity yet</div>
-            )}
+              )}
           </div>
         </div>
+
+        {/* Quick Actions */}
+        <QuickActionsPanel />
       </div>
     </div>
   );

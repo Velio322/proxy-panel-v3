@@ -1,5 +1,6 @@
 import express from 'express';
 import { config } from '../config';
+import path from 'path';
 import { ProcessManager } from './process-manager';
 import { MasterClient } from './master-client';
 import { createWorkerAPI } from './api/routes';
@@ -17,6 +18,7 @@ async function main() {
   // Initialize process manager
   const pm = new ProcessManager({
     configDir: config.worker.configDir,
+    binDir: path.dirname(config.worker.xrayBin),
     xrayBin: config.worker.xrayBin,
     singboxBin: config.worker.singboxBin,
     naiveBin: config.worker.naiveBin,
@@ -45,27 +47,33 @@ async function main() {
     console.log(`[Worker] Config dir: ${config.worker.configDir}`);
   });
 
+  let masterClient: MasterClient | null = null;
+
   // Connect to master if configured
   if (config.worker.masterUrl) {
-    const masterClient = new MasterClient({
+    masterClient = new MasterClient({
       masterUrl: config.worker.masterUrl,
       nodeSecret: config.worker.nodeSecret,
-      pollInterval: 30000, // 30 seconds
+      pollInterval: 30000, // 30 seconds for status report
       onConfigUpdate: (inbounds) => {
-        console.log(`[Worker] Received config update: ${inbounds.length} inbounds`);
+        console.log(`[Worker] Received config update via WS: ${inbounds.length} inbounds`);
         pm.applyConfig(inbounds);
       },
-      onStatusReport: (status) => {
-        masterClient.reportStatus(pm.getStatus());
+      onStatusReport: () => {
+        if (masterClient) {
+          masterClient.reportStatus(pm.getStatus());
+        }
       },
     });
 
     masterClient.start();
 
     // Report traffic stats every 60 seconds
-    setInterval(() => {
-      const traffic = pm.getTrafficStats();
-      masterClient.reportTraffic(traffic);
+    setInterval(async () => {
+      if (masterClient) {
+        const traffic = pm.getTrafficStats();
+        await masterClient.reportTraffic(traffic);
+      }
     }, 60000);
 
     // Initial status report
@@ -78,6 +86,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('\n[Worker] Shutting down...');
+    if (masterClient) masterClient.stop();
     pm.stopAll();
     server.close();
     process.exit(0);

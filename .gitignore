@@ -1,33 +1,59 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-.env
-*.log
-.DS_Store
-Thumbs.db
-
-# Prisma
-server/prisma/migrations/
-
-# Build
 client/dist/
 server/dist/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+server/.env
+
+# Logs
+*.log
+npm-debug.log*
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Docker volumes
+# Prisma migrations (generated)
+server/prisma/migrations/
+
+# Docker volumes (local data)
 postgres_data/
 redis_data/
 prometheus_data/
 grafana_data/
 
+# Debug/test scripts (not production)
+client/debug*.mjs
+client/shot*.mjs
+client/test*.mjs
+client/verify*.mjs
+client/screenshot*.png
+
 # Temp
 /tmp/
 *.tmp
+*.temp
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Debug & screenshot test scripts (development artifacts)
+client/shot*.mjs
+client/debug*.mjs
+client/verify*.mjs
+client/test*.mjs

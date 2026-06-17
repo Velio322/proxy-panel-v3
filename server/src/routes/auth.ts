@@ -47,8 +47,8 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(tokenPayload, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
-    });
+      expiresIn: config.jwt.expiresIn as any,
+    } as any);
 
     // Store session
     await prisma.userSession.create({
@@ -68,6 +68,13 @@ router.post('/login', async (req: Request, res: Response) => {
       resourceId: user.id,
       ip: req.ip,
       userAgent: req.headers['user-agent'],
+    });
+
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     res.json({
@@ -90,13 +97,13 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 router.get('/me', async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = req.cookies?.auth_token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null);
+  
+  if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, config.jwt.secret) as { id: string };
     const prisma = getPrisma();
 
@@ -119,11 +126,13 @@ router.get('/me', async (req: Request, res: Response) => {
 });
 
 router.post('/logout', async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.json({ success: true });
+  const token = req.cookies?.auth_token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null);
+  
+  res.clearCookie('auth_token');
+
+  if (!token) return res.json({ success: true });
 
   try {
-    const token = authHeader.split(' ')[1];
     const prisma = getPrisma();
     await prisma.userSession.deleteMany({ where: { token } });
     res.json({ success: true });

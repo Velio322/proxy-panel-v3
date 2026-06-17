@@ -1,4 +1,4 @@
-import { PrismaClient, AuditAction } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { getPrisma } from './prisma';
 
 export async function createAuditLog(data: {

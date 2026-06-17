@@ -29,7 +29,6 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
       totalNodes,
       onlineNodes,
       totalInbounds,
-      activeSubscriptions,
       expiringToday,
       todayTraffic,
       monthTraffic,
@@ -40,7 +39,6 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
       prisma.node.count({ where: { active: true } }),
       prisma.node.count({ where: { status: 'ONLINE', active: true } }),
       prisma.inbound.count({ where: { enable: true } }),
-      prisma.subscription.count({ where: { status: 'ACTIVE', ...where } }),
       prisma.client.count({
         where: {
           ...where,
@@ -61,7 +59,7 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
       clients: { total: totalClients, active: activeClients, banned: bannedClients },
       nodes: { total: totalNodes, online: onlineNodes, offline: totalNodes - onlineNodes },
       inbounds: { total: totalInbounds },
-      subscriptions: { active: activeSubscriptions, expiringToday },
+      expiringToday,
       traffic: {
         today: { upload: todayTraffic._sum.upload || 0, download: todayTraffic._sum.download || 0 },
         month: { upload: monthTraffic._sum.upload || 0, download: monthTraffic._sum.download || 0 },
@@ -86,18 +84,36 @@ router.get('/traffic-chart', async (req: AuthRequest, res: Response) => {
     if (nodeId) where.nodeId = nodeId;
     if (clientId) where.clientId = clientId;
 
-    const data = await prisma.$queryRaw`
-      SELECT
-        date_trunc('day', "recordAt") as day,
-        SUM("upload") as upload,
-        SUM("download") as download
-      FROM "TrafficLog"
-      WHERE "recordAt" >= ${startDate}
-        ${nodeId ? prisma.$queryRaw`AND "nodeId" = ${nodeId}` : prisma.$queryRaw``}
-        ${clientId ? prisma.$queryRaw`AND "clientId" = ${clientId}` : prisma.$queryRaw``}
-      GROUP BY date_trunc('day', "recordAt")
-      ORDER BY day ASC
-    `;
+    let data;
+    if (nodeId && clientId) {
+      data = await prisma.$queryRaw`
+        SELECT date_trunc('day', "recordAt") as day, SUM("upload") as upload, SUM("download") as download
+        FROM "TrafficLog"
+        WHERE "recordAt" >= ${startDate} AND "nodeId" = ${nodeId} AND "clientId" = ${clientId}
+        GROUP BY date_trunc('day', "recordAt") ORDER BY day ASC
+      `;
+    } else if (nodeId) {
+      data = await prisma.$queryRaw`
+        SELECT date_trunc('day', "recordAt") as day, SUM("upload") as upload, SUM("download") as download
+        FROM "TrafficLog"
+        WHERE "recordAt" >= ${startDate} AND "nodeId" = ${nodeId}
+        GROUP BY date_trunc('day', "recordAt") ORDER BY day ASC
+      `;
+    } else if (clientId) {
+      data = await prisma.$queryRaw`
+        SELECT date_trunc('day', "recordAt") as day, SUM("upload") as upload, SUM("download") as download
+        FROM "TrafficLog"
+        WHERE "recordAt" >= ${startDate} AND "clientId" = ${clientId}
+        GROUP BY date_trunc('day', "recordAt") ORDER BY day ASC
+      `;
+    } else {
+      data = await prisma.$queryRaw`
+        SELECT date_trunc('day', "recordAt") as day, SUM("upload") as upload, SUM("download") as download
+        FROM "TrafficLog"
+        WHERE "recordAt" >= ${startDate}
+        GROUP BY date_trunc('day', "recordAt") ORDER BY day ASC
+      `;
+    }
 
     res.json(serializeBigInt(data));
   } catch {

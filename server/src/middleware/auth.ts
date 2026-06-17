@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { AuthRequest, AuthUser } from '../types';
 
+export type { AuthRequest } from '../types';
+
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
 

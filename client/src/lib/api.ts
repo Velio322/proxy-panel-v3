@@ -3,20 +3,26 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
+  if (token) {
+    cfg.headers.Authorization = `Bearer ${token}`;
+  }
+  return cfg;
 });
 
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err.response?.status === 401) {
+      localStorage.removeItem('user');
       localStorage.removeItem('token');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }
@@ -130,7 +136,7 @@ export interface DashboardOverview {
   clients: { total: number; active: number; banned: number };
   nodes: { total: number; online: number; offline: number };
   inbounds: { total: number };
-  subscriptions: { active: number; expiringToday: number };
+  expiringToday: number;
   traffic: {
     today: { upload: number; download: number };
     month: { upload: number; download: number };
@@ -150,8 +156,31 @@ export interface AuditLog {
   resourceId?: string;
   details?: any;
   ip?: string;
+  userAgent?: string;
   createdAt: string;
   user?: { id: string; username: string; role: string };
+}
+
+export interface RoutingRule {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  priority: number;
+  type: 'field' | 'logical';
+  domain?: string[];
+  ip?: string[];
+  port?: string;
+  sourcePort?: string;
+  source?: string[];
+  protocol?: string[];
+  inboundTag?: string[];
+  outboundTag: string;
+  balancerTag?: string;
+  subRules?: any[];
+  nodeScope?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ──── API Methods ────
@@ -241,4 +270,45 @@ export const auditApi = {
     api.get<{ logs: AuditLog[]; total: number }>('/audit', { params }),
 };
 
+export const routingApi = {
+  getAll: (params?: Record<string, any>) => api.get<RoutingRule[]>('/routing', { params }),
+  create: (data: Partial<RoutingRule>) => api.post<RoutingRule>('/routing', data),
+  update: (id: string, data: Partial<RoutingRule>) => api.put<RoutingRule>(`/routing/${id}`, data),
+  delete: (id: string) => api.delete(`/routing/${id}`),
+  toggle: (id: string) => api.post(`/routing/${id}/toggle`),
+  reorder: (data: { rules: Array<{ id: string; priority: number }> }) =>
+    api.post('/routing/reorder', data),
+  getPresets: () => api.get('/routing/presets/list'),
+};
+
+
+export const settingsApi = {
+  getAll: () => api.get<Record<string, any>>('/settings'),
+  saveAll: (data: Record<string, any>) => api.put('/settings', data),
+  get: (key: string) => api.get(`/settings/${key}`),
+  set: (key: string, value: any) => api.put(`/settings/${key}`, { value }),
+};
+
+export const subscriptionsApi = {
+  getAll: (params?: Record<string, any>) =>
+    api.get<{ data: any[]; total: number }>('/subscriptions', { params }),
+  create: (data: any) => api.post('/subscriptions', data),
+  update: (id: string, data: any) => api.put(`/subscriptions/${id}`, data),
+  cancel: (id: string) => api.post(`/subscriptions/${id}/cancel`),
+};
+
+export const resellersApi = {
+  getAll: (params?: Record<string, any>) => api.get<any[]>('/resellers', { params }),
+  getById: (id: string) => api.get(`/resellers/${id}`),
+  create: (data: any) => api.post('/resellers', data),
+  update: (id: string, data: any) => api.put(`/resellers/${id}`, data),
+  delete: (id: string) => api.delete(`/resellers/${id}`),
+};
+
+export const backupApi = {
+  run: () => api.post('/backup/run'),
+  getLogs: () => api.get('/backup/logs'),
+};
+
 export default api;
+

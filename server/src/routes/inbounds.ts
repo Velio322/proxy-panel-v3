@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
 import { auditLog } from '../middleware/audit';
+import { getWorkerSocketManager } from '../ws/worker-socket';
 
 const router = Router();
 router.use(authenticate);
@@ -95,7 +96,11 @@ router.post('/', requireAdmin, auditLog('CREATE', 'inbound'), async (req: AuthRe
     });
     if (existing) return res.status(400).json({ error: 'Tag already exists on this node' });
 
-    const inbound = await prisma.inbound.create({ data });
+    const inbound = await prisma.inbound.create({ data: data as any });
+    
+    // Real-time update via WebSocket
+    getWorkerSocketManager().pushConfig(data.nodeId);
+
     res.status(201).json(serializeBigInt(inbound));
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -110,6 +115,10 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'inbound'), async (req: Auth
     const prisma = getPrisma();
     const data = updateInboundSchema.parse(req.body);
     const inbound = await prisma.inbound.update({ where: { id: req.params.id }, data });
+
+    // Real-time update via WebSocket
+    getWorkerSocketManager().pushConfig(inbound.nodeId);
+
     res.json(serializeBigInt(inbound));
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -139,6 +148,9 @@ router.post('/:id/toggle', requireAdmin, auditLog('TOGGLE', 'inbound'), async (r
       where: { id: req.params.id },
       data: { enable: !inbound.enable },
     });
+
+    // Real-time update via WebSocket
+    getWorkerSocketManager().pushConfig(updated.nodeId);
 
     res.json({ enable: updated.enable });
   } catch {

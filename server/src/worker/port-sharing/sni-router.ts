@@ -70,7 +70,7 @@ export class SNIRouter {
    * Assign unique internal ports for each port-shared inbound.
    * External: 443 -> Internal: separate ports per protocol
    */
-  getUpstreamPort(ps: PortShareConfig): number {
+  getUpstreamPort(ps: { protocol: string; tag: string }): number {
     // Base port 10000 + protocol offset
     const offsets: Record<string, number> = {
       'VLESS': 0,
@@ -276,7 +276,7 @@ stream {
             settings: {},
             stream: {},
             routing: {},
-            sniffing: true,
+            sniffing: { enabled: true },
             enable: true,
             portShares: [],
           });

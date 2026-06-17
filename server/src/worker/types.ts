@@ -21,7 +21,7 @@ export interface InboundConfig {
   settings: Record<string, any>;
   stream: Record<string, any>;
   routing: Record<string, any>;
-  sniffing: boolean;
+  sniffing: Record<string, any>;
   remark?: string;
   enable: boolean;
   portShares: PortShareConfig[];
@@ -76,4 +76,44 @@ export interface MasterPayload {
   inbounds: InboundConfig[];
   routing?: any;
   timestamp: number;
+}
+
+export interface RoutingRule {
+  id?: string;
+  type: 'field' | 'logical';
+  domain?: string[];
+  domainMatcher?: string;
+  ip?: string[];
+  port?: string | number;
+  sourcePort?: string | number;
+  source?: string[];
+  inboundTag?: string[];
+  protocol?: string[];
+  outboundTag: string;
+  balancerTag?: string;
+  negate?: boolean;
+  email?: string;
+  user?: string[];
+  attrs?: string;
+  network?: 'tcp' | 'udp' | 'tcp,udp';
+}
+
+export interface XrayConfig {
+  log: Record<string, any>;
+  stats: Record<string, any>;
+  api: Record<string, any>;
+  dns: Record<string, any>;
+  policy: Record<string, any>;
+  routing: Record<string, any>;
+  inbounds: any[];
+  outbounds: any[];
+}
+
+export interface SingboxConfig {
+  log: { level: string; timestamp: boolean };
+  dns: any;
+  inbounds: any[];
+  outbounds: any[];
+  route: any;
+  experimental?: any;
 }

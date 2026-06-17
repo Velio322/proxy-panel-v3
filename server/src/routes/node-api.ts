@@ -1,62 +1,245 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
-import { AuthRequest } from '../middleware/auth';
 import { config } from '../config';
-import { getRedis, incrTrafficStat, cacheGet, cacheSet } from '../lib/redis';
 
 const router = Router();
 
-// ──── Node Authentication ────
+// ══════════════════════════════════════════════
+// POST /api/v1/nodes/self/register
+// Remote worker handshake: register node with master
+// ══════════════════════════════════════════════
 
-const authenticateNode = (req: AuthRequest, res: Response, next: any) => {
-  const nodeSecret = req.headers['x-node-secret'] as string;
-  const authHeader = req.headers.authorization;
-
-  if (nodeSecret === config.worker.nodeSecret ||
-      authHeader === `Bearer ${config.worker.nodeSecret}`) {
-    return next();
-  }
-
-  return res.status(401).json({ error: 'Unauthorized' });
-};
-
-router.use(authenticateNode);
-
-// ──── Helper: find node by IP or X-Node-Id ────
-
-async function findNode(req: any) {
-  const prisma = getPrisma();
-
-  // Try X-Node-Id header first (worker sends its registered ID)
-  const nodeId = req.headers['x-node-id'] as string;
-  if (nodeId) {
-    return prisma.node.findUnique({ where: { id: nodeId } });
-  }
-
-  // Fallback: find by IP
-  const ip = req.ip || req.socket?.remoteAddress || '';
-  // Normalize IPv6 mapped IPv4
-  const normalizedIp = ip.replace(/^::ffff:/, '');
-  return prisma.node.findFirst({ where: { host: normalizedIp } });
-}
-
-// ──── Worker polls this to get its config ────
-
-router.get('/config', async (req: AuthRequest, res: Response) => {
+router.post('/register', async (req: Request, res: Response) => {
   try {
-    const prisma = getPrisma();
-    const node = await findNode(req);
+    const { token, name, host, port, apiPort, system } = req.body;
 
-    if (!node) {
-      return res.json({ inbounds: [], timestamp: Date.now() });
+    // Validate token
+    if (!token || token !== config.worker.nodeSecret) {
+      return res.status(401).json({ error: 'Invalid auth token' });
     }
 
-    const inbounds = await prisma.inbound.findMany({
-      where: { nodeId: node.id, enable: true },
-      include: { portShares: { where: { enable: true } } },
+    const prisma = getPrisma();
+
+    // Check if node already registered by name or host
+    const existing = await prisma.node.findFirst({
+      where: {
+        OR: [
+          { name: name || '' },
+          { host: host || req.ip },
+        ],
+      },
     });
 
-    res.json({
+    if (existing) {
+      // Update existing node
+      const updated = await prisma.node.update({
+        where: { id: existing.id },
+        data: {
+          name: name || existing.name,
+          host: host || req.ip,
+          port: port || existing.port,
+          apiPort: apiPort || existing.apiPort,
+          status: 'ONLINE',
+          lastCheckAt: new Date(),
+          version: system?.release || existing.version,
+        },
+      });
+
+      console.log(`[Handshake] Node "${updated.name}" re-registered (${updated.id})`);
+      return res.json({
+        nodeId: updated.id,
+        status: 're-registered',
+        message: 'Node updated successfully',
+      });
+    }
+
+    // Create new node
+    const node = await prisma.node.create({
+      data: {
+        name: name || `node-${Date.now()}`,
+        host: host || req.ip || '0.0.0.0',
+        port: port || 443,
+        apiPort: apiPort || 2087,
+        secret: token,
+        status: 'ONLINE',
+        lastCheckAt: new Date(),
+        version: system?.release || null,
+        cpuUsage: null,
+        memUsage: null,
+        tags: [],
+        active: true,
+      },
+    });
+
+    console.log(`[Handshake] New node registered: "${node.name}" (${node.id}) from ${host || req.ip}`);
+
+    // Log audit event
+    await prisma.auditLog.create({
+      data: {
+        action: 'CREATE',
+        resource: 'node',
+        resourceId: node.id,
+        details: {
+          name: node.name,
+          host: node.host,
+          system: system || {},
+          source: 'worker-handshake',
+        },
+        ip: req.ip,
+      },
+    });
+
+    res.status(201).json({
+      nodeId: node.id,
+      status: 'registered',
+      message: 'Node registered successfully',
+    });
+  } catch (error: any) {
+    console.error('[Handshake] Error:', error.message);
+    res.status(500).json({ error: 'Registration failed', details: error.message });
+  }
+});
+
+// ══════════════════════════════════════════════
+// POST /api/v1/nodes/self/heartbeat
+// Worker sends periodic health/status updates
+// ══════════════════════════════════════════════
+
+router.post('/heartbeat', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token || token !== config.worker.nodeSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { nodeId, status, cpuUsage, memUsage, uptime, connections } = req.body;
+
+    if (!nodeId) {
+      return res.status(400).json({ error: 'nodeId required' });
+    }
+
+    const prisma = getPrisma();
+
+    // Update node status
+    const node = await prisma.node.findUnique({ where: { id: nodeId } });
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+
+    await prisma.node.update({
+      where: { id: nodeId },
+      data: {
+        status: status || 'ONLINE',
+        cpuUsage: cpuUsage ?? null,
+        memUsage: memUsage ?? null,
+        lastCheckAt: new Date(),
+        lastPingMs: null, // Could calculate RTT
+      },
+    });
+
+    // Store metric
+    await prisma.nodeMetric.create({
+      data: {
+        nodeId,
+        cpuUsage: cpuUsage ?? null,
+        memUsage: memUsage ?? null,
+        netUpload: 0,
+        netDownload: 0,
+        connections: connections || 0,
+        uptime: uptime || 0,
+      },
+    }).catch(() => {}); // Non-critical
+
+    res.json({ status: 'ok' });
+  } catch (error: any) {
+    console.error('[Heartbeat] Error:', error.message);
+    res.status(500).json({ error: 'Heartbeat failed' });
+  }
+});
+
+// ══════════════════════════════════════════════
+// POST /api/v1/nodes/self/alert
+// Worker reports critical alerts
+// ══════════════════════════════════════════════
+
+router.post('/alert', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || token !== config.worker.nodeSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { nodeId, core, type, message, stderr } = req.body;
+
+    const prisma = getPrisma();
+
+    // Store as audit log
+    await prisma.auditLog.create({
+      data: {
+        action: 'ALERT',
+        resource: 'node',
+        resourceId: nodeId,
+        details: {
+          core,
+          type,
+          message,
+          stderr: stderr?.slice(0, 10),
+          source: 'worker-alert',
+        },
+        ip: req.ip,
+      },
+    });
+
+    // Update node status if crash
+    if (nodeId && (type === 'crash' || type === 'start_failed')) {
+      await prisma.node.update({
+        where: { id: nodeId },
+        data: { status: 'ERROR' },
+      }).catch(() => {});
+    }
+
+    console.warn(`[Alert] Node ${nodeId}: [${core}] ${type} - ${message}`);
+
+    res.json({ status: 'acknowledged' });
+  } catch (error: any) {
+    console.error('[Alert] Error:', error.message);
+    res.status(500).json({ error: 'Alert failed' });
+  }
+});
+
+// ══════════════════════════════════════════════
+// GET /api/v1/nodes/self/config
+// Worker fetches its configuration
+// ══════════════════════════════════════════════
+
+router.get('/config', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || token !== config.worker.nodeSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const nodeId = req.query.nodeId as string;
+    if (!nodeId) {
+      return res.status(400).json({ error: 'nodeId required' });
+    }
+
+    const prisma = getPrisma();
+
+    const inbounds = await prisma.inbound.findMany({
+      where: { nodeId, enable: true },
+      include: { portShares: true },
+    });
+
+    const node = await prisma.node.findUnique({ where: { id: nodeId } });
+
+    res.json(serializeBigInt({
+      nodeId,
+      nodeName: node?.name,
       inbounds: inbounds.map((inb) => ({
         id: inb.id,
         protocol: inb.protocol,
@@ -67,342 +250,54 @@ router.get('/config', async (req: AuthRequest, res: Response) => {
         stream: inb.stream,
         routing: inb.routing,
         sniffing: inb.sniffing,
+        remark: inb.remark,
         enable: inb.enable,
-        portShares: inb.portShares.map((ps) => ({
-          id: ps.id,
-          protocol: ps.protocol,
-          tag: ps.tag,
-          host: ps.host,
-          path: ps.path,
-          settings: ps.settings,
-          stream: ps.stream,
-          enable: ps.enable,
-        })),
+        portShares: inb.portShares,
       })),
       timestamp: Date.now(),
-    });
+    }));
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[Config] Error:', error.message);
+    res.status(500).json({ error: 'Config fetch failed' });
   }
 });
 
-// ──── Worker reports status ────
+// ══════════════════════════════════════════════
+// POST /api/v1/nodes/self/traffic
+// Worker reports traffic usage (Fallback for WS)
+// ══════════════════════════════════════════════
 
-router.post('/status', async (req: AuthRequest, res: Response) => {
+router.post('/traffic', async (req: Request, res: Response) => {
   try {
-    const prisma = getPrisma();
-    const node = await findNode(req);
-
-    if (!node) {
-      return res.json({ success: true, warning: 'Node not registered' });
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || token !== config.worker.nodeSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const {
-      status, xrayRunning, singboxRunning, naiveRunning, mieruRunning,
-      uptime, version, cpuUsage, memUsage, connections,
-    } = req.body;
-
-    // Update node status
-    await prisma.node.update({
-      where: { id: node.id },
-      data: {
-        status: status || 'ONLINE',
-        lastCheckAt: new Date(),
-        version,
-        cpuUsage,
-        memUsage,
-        lastPingMs: req.body.pingMs || null,
-        xrayVersion: xrayRunning ? version : null,
-        singboxVersion: singboxRunning ? version : null,
-      },
-    });
-
-    // Store metrics (keep last 24h — 288 entries at 5min intervals)
-    await prisma.nodeMetric.create({
-      data: {
-        nodeId: node.id,
-        cpuUsage,
-        memUsage,
-        connections: connections || 0,
-        uptime: uptime || 0,
-      },
-    });
-
-    // Cleanup old metrics (keep last 288 = 24h at 5min intervals)
-    const cutoff = new Date(Date.now() - 86400000);
-    await prisma.nodeMetric.deleteMany({
-      where: { nodeId: node.id, recordedAt: { lt: cutoff } },
-    });
-
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ──── Worker reports traffic stats (diff-based) ────
-
-router.post('/traffic', async (req: AuthRequest, res: Response) => {
-  try {
-    const prisma = getPrisma();
-    const node = await findNode(req);
-
-    if (!node) {
-      return res.json({ success: true, warning: 'Node not registered' });
+    const { nodeId, stats } = req.body;
+    if (!nodeId || !stats) {
+      return res.status(400).json({ error: 'nodeId and stats required' });
     }
 
-    const { stats } = req.body;
-    if (!stats || typeof stats !== 'object') {
-      return res.json({ success: true });
-    }
+    const { getTrafficBatcher } = await import('../lib/traffic-batcher');
+    const batcher = getTrafficBatcher();
 
-    const r = getRedis();
-    const now = new Date();
-    const minute = now.toISOString().slice(0, 16); // "2024-01-15T10:30"
-
-    // Process each user's traffic
-    // Xray stats API returns cumulative traffic per email
-    // We need to compute diff from previous report
-    for (const [email, traffic] of Object.entries(stats)) {
-      const { upload = 0, download = 0 } = traffic as { upload: number; download: number };
-      if (upload === 0 && download === 0) continue;
-
-      // Get previous cumulative values from Redis
-      const prevKey = `traffic_prev:${node.id}:${email}`;
-      const prevUpload = parseInt(await r.get(`${prevKey}:up`) || '0');
-      const prevDownload = parseInt(await r.get(`${prevKey}:down`) || '0');
-
-      // Compute diff (handle counter reset — if current < previous, assume full reset)
-      const diffUpload = upload >= prevUpload ? upload - prevUpload : upload;
-      const diffDownload = download >= prevDownload ? download - prevDownload : download;
-
-      if (diffUpload === 0 && diffDownload === 0) continue;
-
-      // Store current values for next diff
-      const pipeline = r.pipeline();
-      pipeline.set(`${prevKey}:up`, String(upload));
-      pipeline.set(`${prevKey}:down`, String(download));
-      pipeline.expire(`${prevKey}:up`, 86400);
-      pipeline.expire(`${prevKey}:down`, 86400);
-
-      // Real-time traffic counters in Redis
-      const dayKey = now.toISOString().slice(0, 10);
-      pipeline.incrbyfloat(`traffic_realtime:${node.id}:${dayKey}:up`, diffUpload);
-      pipeline.incrbyfloat(`traffic_realtime:${node.id}:${dayKey}:down`, diffDownload);
-      pipeline.incrbyfloat(`traffic_realtime_client:${dayKey}:up`, diffUpload);
-      pipeline.incrbyfloat(`traffic_realtime_client:${dayKey}:down`, diffDownload);
-      pipeline.expire(`traffic_realtime:${node.id}:${dayKey}:up`, 86400 * 7);
-      pipeline.expire(`traffic_realtime:${node.id}:${dayKey}:down`, 86400 * 7);
-      pipeline.expire(`traffic_realtime_client:${dayKey}:up`, 86400 * 7);
-      pipeline.expire(`traffic_realtime_client:${dayKey}:down`, diffDownload);
-
-      await pipeline.exec();
-
-      // Find client by email (Xray uses email as user identifier)
-      // Client email format: {clientUsername}@panel
-      const client = await prisma.client.findFirst({
-        where: {
-          email: email,
-        },
-      });
-
-      if (!client) {
-        // Try finding by username (strip @panel suffix)
-        const username = email.replace(/@panel$/, '').replace(/@.*$/, '');
-        const clientByUsername = await prisma.client.findFirst({
-          where: { username },
-        });
-
-        if (!clientByUsername) continue;
-        await upsertTrafficLog(prisma, clientByUsername.id, node.id, diffUpload, diffDownload, now);
-        continue;
-      }
-
-      await upsertTrafficLog(prisma, client.id, node.id, diffUpload, diffDownload, now);
-    }
-
-    res.json({ success: true, timestamp: Date.now() });
-  } catch (error: any) {
-    console.error('[NodeAPI] Traffic processing error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ──── Worker pulls config for a specific client ────
-
-router.get('/clients/:email/config', async (req: AuthRequest, res: Response) => {
-  try {
-    const prisma = getPrisma();
-    const node = await findNode(req);
-
-    if (!node) {
-      return res.status(404).json({ error: 'Node not registered' });
-    }
-
-    const email = req.params.email;
-    const username = email.replace(/@panel$/, '').replace(/@.*$/, '');
-
-    const client = await prisma.client.findFirst({
-      where: { OR: [{ email }, { username }] },
-      include: { settings: true },
-    });
-
-    if (!client || client.banned) {
-      return res.status(404).json({ error: 'Client not found or banned' });
-    }
-
-    // Check limits
-    if (client.expireAt && client.expireAt < new Date()) {
-      return res.status(403).json({ error: 'Expired' });
-    }
-    if (client.trafficLimit > 0 && client.usedTraffic >= client.trafficLimit) {
-      return res.status(403).json({ error: 'Traffic limit exceeded' });
-    }
-
-    // Get inbounds for this node
-    const inbounds = await prisma.inbound.findMany({
-      where: {
-        nodeId: node.id,
-        enable: true,
-        protocol: { in: (client.protocols as string[] || ['VLESS', 'HYSTERIA2']) as any[] },
-      },
-    });
-
-    res.json({
-      client: {
-        uuid: client.uuid,
-        email: client.email || `${client.username}@panel`,
-        username: client.username,
-      },
-      inbounds: inbounds.map((i) => ({
-        protocol: i.protocol,
-        tag: i.tag,
-        port: i.port,
-        settings: i.settings,
-        stream: i.stream,
-      })),
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ──── Traffic query endpoints (for dashboard) ────
-
-router.get('/traffic/realtime', async (req: AuthRequest, res: Response) => {
-  try {
-    const r = getRedis();
-    const { days = '7' } = req.query as any;
-    const result: any[] = [];
-
-    for (let i = 0; i < parseInt(days); i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dayKey = date.toISOString().slice(0, 10);
-
-      const up = await r.get(`traffic_realtime_client:${dayKey}:up`);
-      const down = await r.get(`traffic_realtime_client:${dayKey}:down`);
-
-      result.push({
-        date: dayKey,
-        upload: parseFloat(up || '0'),
-        download: parseFloat(down || '0'),
+    // stats: Record<email, { upload, download }>
+    for (const [email, stat] of Object.entries(stats as any)) {
+      await batcher.add({
+        nodeId,
+        email,
+        upload: (stat as any).upload || 0,
+        download: (stat as any).download || 0,
       });
     }
 
-    res.json(result.reverse());
+    res.json({ status: 'ok', processed: Object.keys(stats).length });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[Traffic] Error:', error.message);
+    res.status(500).json({ error: 'Traffic report failed' });
   }
 });
-
-router.get('/traffic/node/:nodeId', async (req: AuthRequest, res: Response) => {
-  try {
-    const r = getRedis();
-    const { nodeId } = req.params;
-    const { days = '7' } = req.query as any;
-    const result: any[] = [];
-
-    for (let i = 0; i < parseInt(days); i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dayKey = date.toISOString().slice(0, 10);
-
-      const up = await r.get(`traffic_realtime:${nodeId}:${dayKey}:up`);
-      const down = await r.get(`traffic_realtime:${nodeId}:${dayKey}:down`);
-
-      result.push({
-        date: dayKey,
-        upload: parseFloat(up || '0'),
-        download: parseFloat(down || '0'),
-      });
-    }
-
-    res.json(result.reverse());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ──── Helpers ────
-
-async function upsertTrafficLog(
-  prisma: any,
-  clientId: string,
-  nodeId: string,
-  upload: number,
-  download: number,
-  recordAt: Date
-): Promise<void> {
-  // Create traffic log entry
-  await prisma.trafficLog.create({
-    data: {
-      clientId,
-      nodeId,
-      upload: BigInt(upload),
-      download: BigInt(download),
-      recordAt,
-    },
-  });
-
-  // Update client cumulative counters
-  const totalTraffic = BigInt(upload) + BigInt(download);
-  await prisma.client.update({
-    where: { id: clientId },
-    data: {
-      usedTraffic: { increment: totalTraffic },
-      uploadTraffic: { increment: BigInt(upload) },
-      downloadTraffic: { increment: BigInt(download) },
-      lastActiveAt: recordAt,
-    },
-  });
-
-  // Check if client exceeded traffic limit — auto-ban
-  const client = await prisma.client.findUnique({ where: { id: clientId } });
-  if (client && client.trafficLimit > 0 && client.usedTraffic >= client.trafficLimit) {
-    await prisma.client.update({
-      where: { id: clientId },
-      data: { banned: true },
-    });
-
-    // Create notification
-    await prisma.notification.create({
-      data: {
-        type: 'TRAFFIC_LIMIT',
-        title: 'Traffic limit exceeded',
-        message: `Client ${client.username} exceeded traffic limit (${formatBytes(Number(client.usedTraffic))}/${formatBytes(Number(client.trafficLimit))})`,
-        targetResellerId: client.resellerId,
-      },
-    });
-  }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
 
 export default router;

@@ -32,19 +32,6 @@ export function startScheduler() {
       if (expired.count > 0) {
         console.log(`[Scheduler] Banned ${expired.count} expired clients`);
       }
-
-      // Expire subscriptions
-      const expiredSubs = await prisma.subscription.updateMany({
-        where: {
-          status: 'ACTIVE',
-          expireAt: { lt: now },
-        },
-        data: { status: 'EXPIRED' },
-      });
-
-      if (expiredSubs.count > 0) {
-        console.log(`[Scheduler] Expired ${expiredSubs.count} subscriptions`);
-      }
     } catch (error) {
       console.error('[Scheduler] Expiry check failed:', error);
     }

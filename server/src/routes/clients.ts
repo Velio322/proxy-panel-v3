@@ -125,10 +125,7 @@ router.post('/', requireAdmin, auditLog('CREATE', 'client'), async (req: AuthReq
         protocols: data.protocols || ['VLESS', 'HYSTERIA2'],
         resellerId,
         settings: {
-          create: {
-            subId: uuidv4(),
-            subPath: `/api/v1/client/${subToken}/sub`,
-          },
+          create: {},
         },
       },
       include: { settings: true },

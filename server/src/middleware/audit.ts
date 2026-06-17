@@ -13,7 +13,7 @@ export const auditLog = (action: string, resource: string) => {
           userId: req.user?.id,
           action,
           resource,
-          resourceId: req.params.id,
+          resourceId: req.params.id as string,
           details: {
             method: req.method,
             path: req.path,

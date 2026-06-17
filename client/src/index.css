@@ -2,52 +2,257 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════
+   KEEPER v3 — CYBERPUNK / GAMING UI
+   Aggressive, high-contrast, sharp edges.
+   ═══════════════════════════════════════════════════════ */
+
 @layer base {
   :root {
-    --background: 225 15% 6%;
-    --foreground: 220 15% 90%;
-    --card: 225 15% 8%;
-    --card-foreground: 220 15% 90%;
-    --popover: 225 15% 10%;
-    --popover-foreground: 220 15% 90%;
-    --primary: 265 80% 60%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 225 15% 12%;
-    --secondary-foreground: 220 15% 85%;
-    --muted: 225 15% 12%;
-    --muted-foreground: 220 10% 50%;
-    --accent: 265 60% 50%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 225 15% 14%;
-    --input: 225 15% 14%;
-    --ring: 265 80% 60%;
-    --radius: 0.625rem;
+    /* "Grey Keeper" (Alternative/Light mode mapping) */
+    --bg:               #141517;
+    --bg-raised:        #1C1E22;
+    --bg-sunken:        #0E0F11;
+    --bg-glass:         rgba(28, 30, 34, 0.7);
+    --fg:               #FFFFFF;
+    --fg-muted:         #A0A5B0;
+    --fg-subtle:        #6B707B;
+    --border:           #2C2E33;
+    --border-subtle:    #1C1E22;
+    --surface:          #1C1E22;
+    --surface-hover:    #25272D;
+    --surface-glass:    rgba(28, 30, 34, 0.8);
+
+    /* Steel Accent */
+    --accent:           #E0E0E0;
+    --accent-2:         #FFFFFF;
+    --accent-hover:     #FFFFFF;
+    --accent-muted:     rgba(224, 224, 224, 0.1);
+    --accent-fg:        #0B0C0E;
+    --accent-glow:      rgba(255, 255, 255, 0.15);
+
+    /* Statuses (Desaturated for Grey Mode) */
+    --danger:           #FF3B3B;
+    --success:          #E0E0E0; /* White/Grey instead of Green */
+    --warning:          #FFB020;
+    --info:             #4A90E2;
+
+    /* Sharp Geometry */
+    --radius:           0px;
+    --radius-sm:        0px;
+    --radius-md:        2px;
+    --radius-lg:        4px;
+    --radius-xl:        4px;
+
+    /* Flat / Harsh Shadows */
+    --shadow-sm:        none;
+    --shadow:           0 4px 0 rgba(0,0,0,0.5);
+    --shadow-md:        0 6px 0 rgba(0,0,0,0.6);
+    --shadow-lg:        0 10px 0 rgba(0,0,0,0.7);
+    --shadow-glow:      0 0 15px var(--accent-glow);
   }
 
-  * {
-    @apply border-border;
-  }
+  .dark {
+    /* "Red Keeper" (Primary Dark Mode) */
+    --bg:               #0B0C0E;
+    --bg-raised:        #141518;
+    --bg-sunken:        #000000;
+    --bg-glass:         rgba(11, 12, 14, 0.8);
+    --fg:               #FFFFFF;
+    --fg-muted:         #8F94A0;
+    --fg-subtle:        #5A5F6A;
+    --border:           #202226;
+    --border-subtle:    #141518;
+    --surface:          #101114;
+    --surface-hover:    #181A1F;
+    --surface-glass:    rgba(16, 17, 20, 0.85);
 
+    /* Ruby Red Accent */
+    --accent:           #E61C2B;
+    --accent-2:         #FF1F30;
+    --accent-hover:     #FF3344;
+    --accent-muted:     rgba(230, 28, 43, 0.15);
+    --accent-fg:        #FFFFFF;
+    --accent-glow:      rgba(230, 28, 43, 0.4);
+
+    /* Statuses */
+    --danger:           #E61C2B;
+    --success:          #FFFFFF; /* White for online */
+    --warning:          #FFB020;
+    --info:             #E61C2B;
+
+    /* Flat / Harsh Shadows */
+    --shadow-sm:        none;
+    --shadow:           0 4px 0 rgba(0,0,0,0.8);
+    --shadow-md:        0 6px 0 rgba(0,0,0,0.9);
+    --shadow-lg:        0 10px 0 rgba(0,0,0,1);
+    --shadow-glow:      0 0 20px var(--accent-glow);
+  }
+}
+
+@layer base {
+  * { 
+    border-color: var(--border); 
+    box-sizing: border-box; 
+    border-radius: var(--radius);
+  }
+  html { font-size: 14px; -webkit-text-size-adjust: 100%; }
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    background: var(--bg); 
+    color: var(--fg);
+    font-family: 'JetBrains Mono', 'Inter', monospace;
+    -webkit-font-smoothing: antialiased; 
+    text-transform: uppercase; /* Force uppercase for Cyberpunk feel in headers */
+    letter-spacing: 0.02em;
+  }
+  
+  /* Reset uppercase for regular text blocks to preserve readability */
+  p, span, div, input, textarea {
+    text-transform: none;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6, .nav-label, .btn-text {
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.05em;
   }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.2); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.4); }
+/* ═══ SCROLLBAR ═══ */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-sunken); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-/* Selection */
-::selection { background: rgba(139, 92, 246, 0.3); color: white; }
+/* ═══ SELECTION ═══ */
+::selection { background: var(--accent); color: var(--accent-fg); }
 
-/* Animations */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+/* ═══ FOCUS ═══ */
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 0px; }
+
+/* ═══ TRANSITIONS ═══ */
+*, *::before, *::after { transition-property: color, background-color, border-color, box-shadow; transition-duration: 100ms; }
+
+/* ═══ SKELETON LOADING ═══ */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 0;
+}
+@keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
+
+/* ═══ STATUS INDICATORS (DIAMONDS) ═══ */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--fg-subtle);
+  transform: rotate(45deg); /* Diamond shape */
+  flex-shrink: 0;
+  border: 1px solid var(--bg);
+}
+.status-dot.online  { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.status-dot.offline { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.status-dot.warning { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+.status-dot.maint   { background: var(--border); }
+
+/* ═══ CARD ═══ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: none; /* No soft shadows */
+  position: relative;
 }
 
-.animate-in { animation: fade-in 0.3s ease-out forwards; }
+/* Add corner cut effect via clip-path if desired, or keep rigid rectangle */
+.card-hover:hover {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 10px var(--accent-muted);
+}
+
+/* ═══ INPUT ═══ */
+.input-base {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 0; /* Sharp corners */
+  color: var(--fg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  transition: border-color 100ms, box-shadow 100ms;
+}
+
+.input-base::placeholder { color: var(--fg-subtle); text-transform: uppercase; }
+.input-base:hover { border-color: var(--fg-muted); }
+.input-base:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--surface);
+}
+
+/* ═══ BUTTONS ═══ */
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent-2);
+  border-radius: 0;
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* ═══ SIDEBAR ACTIVE LINK ═══ */
+.nav-link-active {
+  background: var(--surface);
+  color: var(--fg) !important;
+  border-left: 3px solid var(--accent);
+  box-shadow: inset 20px 0 30px -20px var(--accent-muted);
+}
+.nav-link-active span, .nav-link-active svg {
+  color: var(--accent) !important;
+}
+
+/* ═══ TABLE ═══ */
+.table-row-hover:hover {
+  background: var(--surface-hover);
+  border-left: 2px solid var(--accent);
+}
+
+/* ═══ BADGE ═══ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: 0.65rem;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ═══ PROGRESS BAR ═══ */
+.progress-bar {
+  height: 2px;
+  background: var(--border);
+  border-radius: 0;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+}
+
+/* Override lucide icons to look sharper */
+svg { stroke-width: 1.5; }
