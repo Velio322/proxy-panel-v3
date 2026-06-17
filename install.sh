@@ -142,9 +142,9 @@ EOF
 
     # ──── Start ────
 
-    step "PANEL 4/6" "Starting services..."
-    docker compose up -d
-    log "Services started"
+    step "PANEL 4/6" "Starting database..."
+    docker compose up -d postgres redis
+    log "Database started"
 
     # ──── Wait for DB ────
 
@@ -161,27 +161,17 @@ EOF
     # ──── Migrate ────
 
     step "PANEL 6/6" "Running migrations..."
-    docker compose restart server 2>/dev/null || true
-    for i in $(seq 1 30); do
-        if docker compose exec -T server npx prisma db push --skip-generate 2>/dev/null; then
-            break
-        fi
-        sleep 2
-    done
-    docker compose exec -T server npx prisma db push --skip-generate 2>&1 | tail -3
+    docker compose build server 2>&1 | tail -3
+    docker compose run --rm -e DATABASE_URL="postgresql://proxpanel:${DB_PASS}@postgres:5432/proxpanel?schema=public" server npx prisma db push --skip-generate 2>&1 | tail -3
     log "Migrations applied"
-    docker compose exec -T server npx tsx prisma/seed.ts --username "$ADMIN_USER" --password "$ADMIN_PASS" --email "$ADMIN_EMAIL" 2>&1 | tail -3
+    docker compose run --rm -e DATABASE_URL="postgresql://proxpanel:${DB_PASS}@postgres:5432/proxpanel?schema=public" server npx tsx prisma/seed.ts --username "$ADMIN_USER" --password "$ADMIN_PASS" --email "$ADMIN_EMAIL" 2>&1 | tail -3
     log "Admin user created"
 
-    # ──── Wait for server ────
+    # ──── Start all ────
 
-    for i in $(seq 1 30); do
-        if docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null; then
-            break
-        fi
-        sleep 2
-    done
-    docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null || warn "Server may not be fully ready yet"
+    step "PANEL 7/7" "Starting all services..."
+    docker compose up -d
+    log "All services started"
 
     # ──── Firewall ────
 
