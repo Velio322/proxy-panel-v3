@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 # ══════════════════════════════════════════════════════════════
 # KEEPER Installer v3.0
@@ -34,42 +33,57 @@ header(){ echo -e "\n${CYAN}${BOLD}╔══════════════
 generate_secret() { openssl rand -hex 32; }
 
 check_root() {
-    [[ $EUID -ne 0 ]] && error "Run as root: sudo bash $0"
+    if [[ $EUID -ne 0 ]]; then
+        error "Run as root: sudo bash $0"
+    fi
+    log "Running as root"
 }
 
 check_docker() {
     if ! command -v docker &>/dev/null; then
         info "Installing Docker..."
-        curl -fsSL https://get.docker.com | sh
+        if ! curl -fsSL https://get.docker.com | sh; then
+            error "Failed to install Docker. Install manually: https://docs.docker.com/engine/install/"
+        fi
         systemctl enable docker && systemctl start docker
+        log "Docker installed"
+    else
+        log "Docker found: $(docker --version)"
     fi
     if ! docker compose version &>/dev/null; then
         error "Docker Compose plugin missing. Install: apt install docker-compose-plugin"
     fi
+    log "Docker Compose found"
 }
 
 check_git() {
     if ! command -v git &>/dev/null; then
         info "Installing git..."
-        apt-get update -qq && apt-get install -y -qq git >/dev/null
+        apt-get update -qq || warn "apt-get update failed, trying anyway..."
+        apt-get install -y -qq git || error "Failed to install git"
+        log "Git installed"
+    else
+        log "Git found: $(git --version)"
     fi
 }
 
 fetch_source() {
-    info "Fetching source code..."
+    info "Fetching source code from GitHub..."
     rm -rf "$CLONE_DIR"
-    git clone --depth 1 -b "$BRANCH" "https://github.com/${REPO}.git" "$CLONE_DIR"
+    if ! git clone --depth 1 -b "$BRANCH" "https://github.com/${REPO}.git" "$CLONE_DIR"; then
+        error "Failed to clone repository. Check network connection."
+    fi
     log "Source downloaded"
 }
 
 setup_firewall() {
-    info "Configuring UFW..."
     if command -v ufw &>/dev/null; then
-        ufw allow 80/tcp
-        ufw allow 443/tcp
-        ufw allow 443/udp
-        ufw allow 22/tcp
-        echo "y" | ufw enable
+        info "Configuring UFW firewall..."
+        ufw allow 80/tcp >/dev/null 2>&1
+        ufw allow 443/tcp >/dev/null 2>&1
+        ufw allow 443/udp >/dev/null 2>&1
+        ufw allow 22/tcp >/dev/null 2>&1
+        echo "y" | ufw enable >/dev/null 2>&1
         log "UFW configured"
     fi
 }
@@ -88,6 +102,7 @@ main() {
     done
 
     header "Keeper v${VERSION} Installation"
+
     check_root
     check_git
     check_docker
@@ -123,6 +138,7 @@ API_URL=https://${PANEL_DOMAIN}
 FRONTEND_URL=https://${PANEL_DOMAIN}
 EOF
 
+    info "Starting Docker containers..."
     cd "$INSTALL_DIR"
     docker compose up -d
 
