@@ -33,7 +33,8 @@ export class SingboxManager {
   generateConfig(inbounds: InboundConfig[]): any {
     const singboxInbounds = inbounds
       .filter((i) => ['HYSTERIA2', 'TUIC'].includes(i.protocol))
-      .map((inbound) => this.buildInbound(inbound));
+      .map((inbound) => this.buildInbound(inbound))
+      .filter((i): i is NonNullable<typeof i> => i !== null);
 
     return {
       log: { level: 'warn', timestamp: true },
@@ -144,6 +145,7 @@ export class SingboxManager {
     try {
       const proc = spawn(this.binPath, ['run', '-c', this.process.configPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env },
       });
 
       this.process.process = proc;

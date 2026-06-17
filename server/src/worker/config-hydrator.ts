@@ -296,7 +296,8 @@ export class ConfigHydrator {
   generateSingboxConfig(inbounds: InboundConfig[]): SingboxConfig {
     const singboxInbounds = inbounds
       .filter((i) => ['HYSTERIA2', 'TUIC'].includes(i.protocol))
-      .map((i) => this.buildSingboxInbound(i));
+      .map((i) => this.buildSingboxInbound(i))
+      .filter((i): i is NonNullable<typeof i> => i !== null);
 
     return {
       log: { level: 'warn', timestamp: true },

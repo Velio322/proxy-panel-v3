@@ -3,6 +3,12 @@ set -euo pipefail
 
 # ══════════════════════════════════════════════════════════════
 # KEEPER Worker Installer v3.0
+#
+# One-liner install:
+#   bash <(curl -sSL URL) -m https://panel.example.com -t YOUR_TOKEN
+#
+# Interactive:
+#   bash install-worker.sh
 # ══════════════════════════════════════════════════════════════
 
 INSTALL_DIR="/opt/keeper-worker"
@@ -10,10 +16,21 @@ SERVICE_NAME="keeper-worker"
 
 # ──── Colors ────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
+BLUE='\033[0;34m'; NC='\033[0m'
 
 log()   { echo -e "${GREEN}[✓]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
+
+usage() {
+    echo "Usage: $0 [-m MASTER_URL] [-t AUTH_TOKEN]"
+    echo "  -m  Master panel URL (e.g. https://panel.example.com)"
+    echo "  -t  Node auth token"
+    echo ""
+    echo "Examples:"
+    echo "  bash install-worker.sh -m https://panel.example.com -t YOUR_TOKEN"
+    echo "  bash <(curl -sSL URL) -m https://panel.example.com -t YOUR_TOKEN"
+    exit 0
+}
 
 check_root() { [[ $EUID -ne 0 ]] && error "Run as root: sudo bash $0"; }
 
@@ -26,13 +43,12 @@ install_deps() {
 }
 
 setup_worker() {
+    local MASTER_URL="$1"
+    local AUTH_TOKEN="$2"
+
     mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR"
-    
-    read -rp "  Master Panel URL: " MASTER_URL
-    read -rp "  Node Auth Token: " AUTH_TOKEN
-    
-    # Minimal worker script
+
     cat > worker.mjs <<EOF
 import { execSync } from 'child_process';
 import os from 'os';
@@ -82,9 +98,32 @@ EOF
 }
 
 main() {
+    local MASTER_URL=""
+    local AUTH_TOKEN=""
+
+    while getopts "m:t:h" opt; do
+        case $opt in
+            m) MASTER_URL="$OPTARG" ;;
+            t) AUTH_TOKEN="$OPTARG" ;;
+            h) usage ;;
+            *) usage ;;
+        esac
+    done
+
     check_root
+
+    if [[ -z "$MASTER_URL" ]]; then
+        read -rp "  Master Panel URL: " MASTER_URL
+    fi
+    if [[ -z "$AUTH_TOKEN" ]]; then
+        read -rp "  Node Auth Token: " AUTH_TOKEN
+    fi
+
+    [[ -z "$MASTER_URL" ]] && error "Master URL is required (-m)"
+    [[ -z "$AUTH_TOKEN" ]] && error "Auth token is required (-t)"
+
     install_deps
-    setup_worker
+    setup_worker "$MASTER_URL" "$AUTH_TOKEN"
 }
 
 main "$@"
