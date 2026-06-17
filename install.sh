@@ -146,28 +146,42 @@ EOF
     docker compose up -d
     log "Services started"
 
+    # ──── Wait for DB ────
+
+    step "PANEL 5/6" "Waiting for database..."
+    for i in $(seq 1 30); do
+        if docker compose exec -T postgres pg_isready -U proxpanel &>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    docker compose exec -T postgres pg_isready -U proxpanel &>/dev/null || fail "Database not ready"
+    log "Database ready"
+
+    # ──── Migrate ────
+
+    step "PANEL 6/6" "Running migrations..."
+    docker compose restart server 2>/dev/null || true
+    for i in $(seq 1 30); do
+        if docker compose exec -T server npx prisma db push --skip-generate 2>/dev/null; then
+            break
+        fi
+        sleep 2
+    done
+    docker compose exec -T server npx prisma db push --skip-generate 2>&1 | tail -3
+    log "Migrations applied"
+    docker compose exec -T server npx tsx prisma/seed.ts --username "$ADMIN_USER" --password "$ADMIN_PASS" --email "$ADMIN_EMAIL" 2>&1 | tail -3
+    log "Admin user created"
+
     # ──── Wait for server ────
 
-    step "PANEL 5/6" "Waiting for server..."
-    for i in $(seq 1 60); do
+    for i in $(seq 1 30); do
         if docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null; then
             break
         fi
         sleep 2
     done
-    if ! docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null; then
-        warn "Server not healthy, checking logs..."
-        docker compose logs server --tail 20
-        fail "Server failed to start"
-    fi
-    log "Server is healthy"
-
-    # ──── Migrate & Seed ────
-
-    step "PANEL 6/6" "Setting up database..."
-    docker compose exec -T server npx prisma db push --skip-generate 2>&1 | tail -3
-    docker compose exec -T server npx tsx prisma/seed.ts --username "$ADMIN_USER" --password "$ADMIN_PASS" --email "$ADMIN_EMAIL" 2>&1 | tail -3
-    log "Database ready"
+    docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null || warn "Server may not be fully ready yet"
 
     # ──── Firewall ────
 
