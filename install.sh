@@ -4,7 +4,7 @@
 # ProxPanel v3 Installer
 # ══════════════════════════════════════════════════════════════
 # One-liner:
-#   bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh)
+#   bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh?t=$(date +%s))
 # ══════════════════════════════════════════════════════════════
 
 set -uo pipefail
