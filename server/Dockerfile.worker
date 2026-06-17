@@ -1,27 +1,74 @@
+# ══════════════════════════════════════════════════════════════
+# ProxPanel Node Worker Dockerfile
+# ══════════════════════════════════════════════════════════════
+# Installs: Node.js worker + Xray + sing-box + Mieru + HAProxy
+# ══════════════════════════════════════════════════════════════
+
 FROM node:22-alpine AS base
-RUN apk add --no-cache openssl curl iptables
 
-# Install Xray-core
-RUN curl -sL https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -o /tmp/xray.zip && \
-    unzip -o /tmp/xray.zip -d /usr/local/bin/ xray && \
-    chmod +x /usr/local/bin/xray && rm /tmp/xray.zip
-
-# Install sing-box
-RUN curl -sL https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-$(uname -m)-unknown-linux-gnu.tar.gz | \
-    tar xz -C /tmp/ && mv /tmp/sing-box-*/sing-box /usr/local/bin/sing-box && chmod +x /usr/local/bin/sing-box
-
-# Install NaiveProxy
-RUN curl -sL https://github.com/nicknis/nicknis.github.io/releases/latest/download/naive-linux64.zip -o /tmp/naive.zip && \
-    unzip -o /tmp/naive.zip -d /usr/local/bin/ naive && chmod +x /usr/local/bin/naive && rm /tmp/naive.zip || true
-
-# Install Mieru
-RUN curl -sL https://github.com/emmmmmmm/mieru/releases/latest/download/mieru-linux-amd64 -o /usr/local/bin/mieru && \
-    chmod +x /usr/local/bin/mieru || true
-
-# Install HAProxy
-RUN apk add --no-cache haproxy
+RUN apk add --no-cache \
+    openssl curl wget jq unzip bash \
+    iptables ip6tables \
+    haproxy \
+    ca-certificates
 
 WORKDIR /app
+
+# ── Install Xray-core (latest, proper URL pattern) ──
+RUN set -eux; \
+    XRAY_VER=$(wget -qO- https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name'); \
+    ARCH=$(uname -m); \
+    case "$ARCH" in \
+        x86_64)  XRAY_ARCH="64" ;; \
+        aarch64) XRAY_ARCH="arm64-v8a" ;; \
+        armv7l)  XRAY_ARCH="arm32-v7a" ;; \
+        *)       XRAY_ARCH="64" ;; \
+    esac; \
+    wget -qO /tmp/xray.zip \
+        "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-linux-${XRAY_ARCH}.zip" && \
+    unzip -qo /tmp/xray.zip xray -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/xray && \
+    rm -f /tmp/xray.zip && \
+    xray version | head -1
+
+# ── Install sing-box (latest, architecture-aware) ──
+RUN set -eux; \
+    SING_VER=$(wget -qO- https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name'); \
+    SING_TAG="${SING_VER#v}"; \
+    ARCH=$(uname -m); \
+    case "$ARCH" in \
+        x86_64)  SING_ARCH="amd64" ;; \
+        aarch64) SING_ARCH="arm64" ;; \
+        armv7l)  SING_ARCH="armv7" ;; \
+        *)       SING_ARCH="amd64" ;; \
+    esac; \
+    wget -qO /tmp/sing.tar.gz \
+        "https://github.com/SagerNet/sing-box/releases/download/${SING_VER}/sing-box-${SING_TAG}-linux-${SING_ARCH}.tar.gz" && \
+    tar -xzf /tmp/sing.tar.gz -C /tmp/ && \
+    find /tmp -maxdepth 2 -name 'sing-box' -type f -exec mv {} /usr/local/bin/sing-box \; && \
+    chmod +x /usr/local/bin/sing-box && \
+    rm -rf /tmp/sing.tar.gz /tmp/sing-box-* && \
+    sing-box version
+
+# ── Install Mieru (optional, non-fatal) ──
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    case "$ARCH" in \
+        x86_64)  MIERU_ARCH="amd64" ;; \
+        aarch64) MIERU_ARCH="arm64" ;; \
+        *)       MIERU_ARCH="amd64" ;; \
+    esac; \
+    MIERU_VER=$(wget -qO- https://api.github.com/repos/enfein/mieru/releases/latest | jq -r '.tag_name') && \
+    MIERU_TAG="${MIERU_VER#v}" && \
+    wget -qO /tmp/mieru.tar.gz \
+        "https://github.com/enfein/mieru/releases/download/${MIERU_VER}/mita-${MIERU_TAG}-linux-${MIERU_ARCH}.tar.gz" && \
+    tar -xzf /tmp/mieru.tar.gz -C /usr/local/bin/ 2>/dev/null && \
+    (mv /usr/local/bin/mita /usr/local/bin/mieru 2>/dev/null || true) && \
+    chmod +x /usr/local/bin/mieru 2>/dev/null && \
+    rm -f /tmp/mieru.tar.gz || \
+    echo "[Dockerfile] Mieru install skipped (non-fatal)"
+
+# ── Install Node.js dependencies ──
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
