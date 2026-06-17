@@ -66,10 +66,6 @@ install_panel() {
     fi
     docker compose version &>/dev/null || fail "docker compose plugin missing"
 
-    command -v git &>/dev/null || {
-        apt-get update -qq && apt-get install -y -qq git >/dev/null
-    }
-
     # ──── Collect info ────
 
     echo -e "\n  ${BOLD}Panel configuration:${NC}\n"
@@ -87,7 +83,8 @@ install_panel() {
 
     step "PANEL 1/6" "Downloading source..."
     rm -rf "$CLONE_DIR"
-    git clone --depth 1 -b "$BRANCH" "https://github.com/${REPO}.git" "$CLONE_DIR" || fail "Clone failed"
+    mkdir -p "$CLONE_DIR"
+    curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" | tar xz -C "$CLONE_DIR" --strip-components=1 || fail "Download failed"
     log "Source downloaded"
 
     # ──── Setup ────
@@ -212,7 +209,8 @@ install_node() {
 
     step "NODE 1/4" "Downloading source..."
     rm -rf "$CLONE_DIR"
-    git clone --depth 1 -b "$BRANCH" "https://github.com/${REPO}.git" "$CLONE_DIR" || fail "Clone failed"
+    mkdir -p "$CLONE_DIR"
+    curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" | tar xz -C "$CLONE_DIR" --strip-components=1 || fail "Download failed"
     mkdir -p "$NODE_DIR"
     cp -r "$CLONE_DIR/server" "$NODE_DIR/"
     rm -rf "$CLONE_DIR"
