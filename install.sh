@@ -142,36 +142,27 @@ EOF
 
     # ──── Start ────
 
-    step "PANEL 4/6" "Starting database..."
-    docker compose up -d postgres redis
-    log "Database started"
+    step "PANEL 4/6" "Starting all services..."
+    docker compose up -d
+    log "Services started"
 
-    # ──── Wait for DB ────
+    # ──── Wait for server ────
 
-    step "PANEL 5/6" "Waiting for database..."
-    for i in $(seq 1 30); do
-        if docker compose exec -T postgres pg_isready -U proxpanel &>/dev/null; then
+    step "PANEL 5/6" "Waiting for server..."
+    for i in $(seq 1 60); do
+        if docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null; then
             break
         fi
-        sleep 1
+        sleep 2
     done
-    docker compose exec -T postgres pg_isready -U proxpanel &>/dev/null || fail "Database not ready"
-    log "Database ready"
+    docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null || fail "Server failed to start"
+    log "Server is healthy"
 
-    # ──── Migrate ────
+    # ──── Seed ────
 
-    step "PANEL 6/6" "Running migrations..."
-    docker compose build server 2>&1 | tail -3
-    docker compose run --rm -e DATABASE_URL="postgresql://proxpanel:${DB_PASS}@postgres:5432/proxpanel?schema=public" server npx prisma db push --skip-generate 2>&1 | tail -3
-    log "Migrations applied"
-    docker compose run --rm -e DATABASE_URL="postgresql://proxpanel:${DB_PASS}@postgres:5432/proxpanel?schema=public" server npx tsx prisma/seed.ts --username "$ADMIN_USER" --password "$ADMIN_PASS" --email "$ADMIN_EMAIL" 2>&1 | tail -3
+    step "PANEL 6/6" "Creating admin user..."
+    docker compose exec -T server npx tsx prisma/seed.ts --username "$ADMIN_USER" --password "$ADMIN_PASS" --email "$ADMIN_EMAIL" 2>&1 | tail -3
     log "Admin user created"
-
-    # ──── Start all ────
-
-    step "PANEL 7/7" "Starting all services..."
-    docker compose up -d
-    log "All services started"
 
     # ──── Firewall ────
 

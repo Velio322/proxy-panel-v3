@@ -35,7 +35,10 @@ RUN npm ci --only=production && npm cache clean --force
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY --from=build /app/dist ./dist
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 EXPOSE 3000 9090
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:3000/api/health || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npm", "start"]
