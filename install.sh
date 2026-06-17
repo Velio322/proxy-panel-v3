@@ -107,8 +107,14 @@ install_panel() {
     [[ -z "$ADMIN_PASS"   ]] && fail "Password required"
     [[ ${#ADMIN_PASS} -lt 8 ]] && fail "Password must be at least 8 characters"
 
-    # FIX #7: Validate email format
-    if ! echo "$ADMIN_EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$'; then
+    # Validate email format using pure bash (locale-safe, works with any charset)
+    local EMAIL_LOCAL="${ADMIN_EMAIL%%@*}"
+    local EMAIL_DOMAIN="${ADMIN_EMAIL#*@}"
+    if [[ "$ADMIN_EMAIL" != *"@"* ]] || \
+       [[ -z "$EMAIL_LOCAL" ]] || \
+       [[ -z "$EMAIL_DOMAIN" ]] || \
+       [[ "$EMAIL_DOMAIN" != *"."* ]] || \
+       [[ "${EMAIL_DOMAIN##*.}" == "" ]]; then
         fail "Invalid email format: $ADMIN_EMAIL"
     fi
 
