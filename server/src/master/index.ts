@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -102,9 +103,11 @@ if (config.prometheus.enabled) {
   });
 }
 
-// Serve frontend static files
+// Serve frontend static files (only if client/dist exists — in Docker it's a separate container)
 const clientDist = path.resolve(__dirname, '../../../client/dist');
-app.use(express.static(clientDist));
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+}
 
 // Health check
 app.get('/api/health', async (req, res) => {
@@ -128,11 +131,27 @@ app.get('*', (req, res) => {
 });
 
 async function startServer() {
-  try {
-    const prisma = getPrisma();
-    await prisma.$connect();
-    console.log('[DB] Connected to PostgreSQL');
+  // Retry DB connection — entrypoint may still be running db push
+  const MAX_RETRIES = 15;
+  let retries = 0;
+  while (retries < MAX_RETRIES) {
+    try {
+      const prisma = getPrisma();
+      await prisma.$connect();
+      console.log('[DB] Connected to PostgreSQL');
+      break;
+    } catch (error: any) {
+      retries++;
+      console.warn(`[DB] Connection attempt ${retries}/${MAX_RETRIES} failed: ${error.message}`);
+      if (retries >= MAX_RETRIES) {
+        console.error('[Master] Could not connect to database after max retries. Exiting.');
+        process.exit(1);
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
 
+  try {
     getRedis();
     console.log('[Redis] Connected');
 
