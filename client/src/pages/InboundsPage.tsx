@@ -29,9 +29,9 @@ function formToPayload(form: InboundForm) {
       maxStream: form.hy2MaxStream || undefined,
     };
   } else if (form.protocol === 'NAIVEPROXY') {
-    settings = { proxy: form.naiveProxy, proto: form.naiveProto };
+    settings = { username: 'user', password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16), domain: form.sni || '', sni: form.sni || '' };
   } else if (form.protocol === 'MIERU') {
-    settings = { auth: form.mieruAuth, password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16) };
+    settings = { username: 'user', password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16), transport: 'tcp', multiplexing: 'MULTIPLEXING_HIGH' };
   }
 
   let stream: Record<string, any> = {};

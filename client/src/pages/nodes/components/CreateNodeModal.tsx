@@ -60,30 +60,46 @@ export function CreateNodeModal({ onClose }: NodeComponentProps) {
         tags: tags ? tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
       });
       for (const inb of inbounds) {
+        const password = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+
+        let settings: Record<string, any> = {};
+        let stream: Record<string, any> = {};
+
+        if (inb.protocol === 'VLESS') {
+          settings = { id: crypto.randomUUID(), flow: inb.flow };
+          stream = { security: inb.security, sni: inb.sni, fingerprint: inb.fingerprint, network: inb.transport };
+          if (inb.security === 'reality') {
+            stream.publicKey = inb.realityPublicKey;
+            stream.shortId = inb.realityShortId;
+            stream.spiderX = inb.realitySpiderX;
+            stream.dest = inb.realityDest;
+            stream.serverNames = [inb.sni];
+          }
+        } else if (inb.protocol === 'VMESS') {
+          settings = { id: crypto.randomUUID() };
+          stream = { security: inb.security, sni: inb.sni, fingerprint: inb.fingerprint, network: inb.transport };
+        } else if (inb.protocol === 'TROJAN') {
+          settings = { password };
+          stream = { security: inb.security, sni: inb.sni, network: inb.transport };
+        } else if (inb.protocol === 'SHADOWSOCKS') {
+          settings = { method: 'aes-256-gcm', password };
+        } else if (inb.protocol === 'HYSTERIA2') {
+          settings = { password, sni: inb.sni };
+        } else if (inb.protocol === 'NAIVEPROXY') {
+          settings = { username: 'user', password, domain: inb.sni || '' };
+        } else if (inb.protocol === 'MIERU') {
+          settings = { username: 'user', password, transport: 'tcp' };
+        } else if (inb.protocol === 'TUIC') {
+          settings = { password, sni: inb.sni };
+        }
+
         await inboundsApi.create({
           nodeId: node.data.id,
           protocol: inb.protocol as any,
           tag: inb.tag,
           port: inb.port,
-          settings: {
-            id: crypto.randomUUID(),
-            flow: inb.flow,
-            password: crypto.randomUUID().replace(/-/g, '').substring(0, 16),
-            sni: inb.sni,
-          },
-          stream: {
-            security: inb.security,
-            sni: inb.sni,
-            fingerprint: inb.fingerprint,
-            network: inb.transport,
-            ...(inb.security === 'reality' ? {
-              publicKey: inb.realityPublicKey,
-              shortId: inb.realityShortId,
-              spiderX: inb.realitySpiderX,
-              dest: inb.realityDest,
-              serverNames: [inb.sni],
-            } : {}),
-          },
+          settings,
+          stream,
           enable: true,
         });
       }

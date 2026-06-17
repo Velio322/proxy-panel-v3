@@ -307,5 +307,42 @@ function inboundToForm(ib: Inbound): InboundForm {
   return { ...f, id: ib.id, nodeId: ib.nodeId, protocol: ib.protocol as Protocol, tag: ib.tag, port: ib.port, listen: ib.listen, enable: ib.enable, remark: ib.remark || '', sniffing: ib.sniffing, security: (st?.security || 'reality') as Security, uuid: s?.id || '', password: s?.password || '', flow: s?.flow || '', sni: st?.sni || '', fingerprint: st?.fingerprint || 'chrome', transport: (st?.network || 'tcp') as Transport, realityPublicKey: st?.publicKey || '', realityShortId: st?.shortId || '', realitySpiderX: st?.spiderX || '', realityDest: st?.dest || '', realityServerNames: st?.serverNames?.join(', ') || st?.sni || '' };
 }
 function formToRawJson(f: InboundForm): any {
-  return { protocol: f.protocol, tag: f.tag, port: f.port, listen: f.listen, enable: f.enable, settings: { id: f.uuid, password: f.password, flow: f.flow, method: f.method }, stream: { security: f.security || 'reality', network: f.transport, sni: f.sni, fingerprint: f.fingerprint, publicKey: f.realityPublicKey, shortId: f.realityShortId, spiderX: f.realitySpiderX, dest: f.realityDest }, sniffing: { enabled: f.sniffing, destOverride: f.sniffingDestOverride } };
+  const isXray = ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(f.protocol);
+  const result: any = { protocol: f.protocol, tag: f.tag, port: f.port, listen: f.listen, enable: f.enable };
+
+  if (f.protocol === 'VLESS') {
+    result.settings = { id: f.uuid, flow: f.flow };
+    result.stream = { security: f.security || 'none', network: f.transport, sni: f.sni, fingerprint: f.fingerprint };
+    if (f.security === 'reality') {
+      result.stream.publicKey = f.realityPublicKey;
+      result.stream.shortId = f.realityShortId;
+      result.stream.spiderX = f.realitySpiderX;
+      result.stream.dest = f.realityDest;
+    }
+  } else if (f.protocol === 'VMESS') {
+    result.settings = { id: f.uuid, alterId: f.alterId };
+    result.stream = { security: f.security || 'none', network: f.transport, sni: f.sni, fingerprint: f.fingerprint };
+  } else if (f.protocol === 'TROJAN') {
+    result.settings = { password: f.password };
+    result.stream = { security: f.security || 'none', network: f.transport, sni: f.sni };
+  } else if (f.protocol === 'SHADOWSOCKS') {
+    result.settings = { method: f.method, password: f.password };
+  } else if (f.protocol === 'HYSTERIA2') {
+    result.settings = { password: f.password, sni: f.sni };
+  } else if (f.protocol === 'NAIVEPROXY') {
+    result.settings = { username: 'user', password: f.password, domain: f.sni || '' };
+    result.tls = { server_name: f.sni || '' };
+  } else if (f.protocol === 'MIERU') {
+    result.settings = { username: 'user', password: f.password, transport: 'tcp', multiplexing: 'MULTIPLEXING_HIGH' };
+  } else if (f.protocol === 'TUIC') {
+    result.settings = { password: f.password, sni: f.sni };
+  } else {
+    result.settings = { password: f.password };
+  }
+
+  if (isXray) {
+    result.sniffing = { enabled: f.sniffing, destOverride: f.sniffingDestOverride };
+  }
+
+  return result;
 }
