@@ -6,20 +6,22 @@ set -euo pipefail
 # Enterprise-grade proxy management panel
 #
 # One-liner install:
-#   bash <(curl -sSL https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh) -d panel.example.com -e admin@example.com
+#   bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh) -d panel.example.com -e admin@example.com
 #
 # Interactive:
 #   bash install.sh
 # ══════════════════════════════════════════════════════════════
 
 VERSION="3.0.0"
+REPO="Velio322/proxy-panel-v3"
+BRANCH="main"
 INSTALL_DIR="/opt/keeper"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLONE_DIR="/tmp/proxpanel-install"
 
 # ──── Colors ────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'
-DIM='\033[2m'; NC='\033[0m'
+NC='\033[0m'
 
 log()   { echo -e "${GREEN}  ✓${NC} $1"; }
 warn()  { echo -e "${YELLOW}  !${NC} $1"; }
@@ -31,21 +33,8 @@ header(){ echo -e "\n${CYAN}${BOLD}╔══════════════
 
 generate_secret() { openssl rand -hex 32; }
 
-usage() {
-    echo "Usage: $0 [-d DOMAIN] [-e EMAIL]"
-    echo "  -d  Panel domain (e.g. panel.example.com)"
-    echo "  -e  Admin email for SSL (e.g. admin@example.com)"
-    echo ""
-    echo "Examples:"
-    echo "  bash install.sh -d panel.example.com -e admin@example.com"
-    echo "  bash <(curl -sSL URL) -d panel.example.com -e admin@example.com"
-    exit 0
-}
-
 check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        error "Run as root: sudo bash $0"
-    fi
+    [[ $EUID -ne 0 ]] && error "Run as root: sudo bash $0"
 }
 
 check_docker() {
@@ -57,6 +46,20 @@ check_docker() {
     if ! docker compose version &>/dev/null; then
         error "Docker Compose plugin missing. Install: apt install docker-compose-plugin"
     fi
+}
+
+check_git() {
+    if ! command -v git &>/dev/null; then
+        info "Installing git..."
+        apt-get update -qq && apt-get install -y -qq git >/dev/null
+    fi
+}
+
+fetch_source() {
+    info "Fetching source code..."
+    rm -rf "$CLONE_DIR"
+    git clone --depth 1 -b "$BRANCH" "https://github.com/${REPO}.git" "$CLONE_DIR"
+    log "Source downloaded"
 }
 
 setup_firewall() {
@@ -75,21 +78,20 @@ main() {
     local PANEL_DOMAIN=""
     local ADMIN_EMAIL=""
 
-    # Parse args
     while getopts "d:e:h" opt; do
         case $opt in
             d) PANEL_DOMAIN="$OPTARG" ;;
             e) ADMIN_EMAIL="$OPTARG" ;;
-            h) usage ;;
-            *) usage ;;
+            h) echo "Usage: $0 [-d DOMAIN] [-e EMAIL]"; exit 0 ;;
+            *) echo "Usage: $0 [-d DOMAIN] [-e EMAIL]"; exit 1 ;;
         esac
     done
 
     header "Keeper v${VERSION} Installation"
     check_root
+    check_git
     check_docker
 
-    # Interactive fallback
     if [[ -z "$PANEL_DOMAIN" ]]; then
         read -rp "  Enter Panel Domain (e.g. keeper.example.com): " PANEL_DOMAIN
     fi
@@ -100,8 +102,10 @@ main() {
     [[ -z "$PANEL_DOMAIN" ]] && error "Domain is required (-d)"
     [[ -z "$ADMIN_EMAIL" ]] && error "Email is required (-e)"
 
+    fetch_source
+
     mkdir -p "$INSTALL_DIR"
-    cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
+    cp -r "$CLONE_DIR"/* "$INSTALL_DIR/"
 
     DB_PASS=$(generate_secret | head -c 16)
     JWT_SECRET=$(generate_secret)
@@ -121,6 +125,8 @@ EOF
 
     cd "$INSTALL_DIR"
     docker compose up -d
+
+    rm -rf "$CLONE_DIR"
 
     setup_firewall
 
