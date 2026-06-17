@@ -28,6 +28,7 @@ generate_secret() { openssl rand -hex 32; }
 
 # ──── Root check ────
 
+cd / || fail "Cannot cd to /"
 [[ $EUID -ne 0 ]] && fail "Run as root: sudo bash <(curl -Ls URL)"
 
 # ──── Banner ────
