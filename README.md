@@ -13,6 +13,12 @@ Select mode:
 2. **Node only** — proxy worker (xray/singbox)
 3. **Panel + Node** — all-in-one server
 
+## Uninstall
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/uninstall.sh)
+```
+
 ## Supported protocols
 
 - VLESS (Reality/XTLS-Vision)
