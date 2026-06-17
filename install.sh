@@ -17,20 +17,22 @@ CLONE_DIR="/tmp/proxpanel-src"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
-log()   { echo -e "${GREEN}✓${NC} $1"; }
-warn()  { echo -e "${YELLOW}!${NC} $1"; }
-fail()  { echo -e "${RED}✗ $1${NC}"; exit 1; }
+log()   { echo -e "${GREEN}  ✓${NC} $1"; }
+warn()  { echo -e "${YELLOW}  !${NC} $1"; }
+fail()  { echo -e "${RED}  ✗ $1${NC}"; exit 1; }
 step()  { echo -e "\n${CYAN}${BOLD}[$1]${NC} ${BOLD}$2${NC}"; }
 
-# ──── Checks ────
+# ──── Root check ────
 
 [[ $EUID -ne 0 ]] && fail "Run as root: sudo bash <(curl -Ls URL)"
 
-command -v docker &>/dev/null || {
+# ──── Dependencies ────
+
+if ! command -v docker &>/dev/null; then
     echo -e "${CYAN}Installing Docker...${NC}"
     curl -fsSL https://get.docker.com | sh
     systemctl enable docker &>/dev/null && systemctl start docker
-}
+fi
 docker compose version &>/dev/null || fail "docker compose plugin missing"
 
 command -v git &>/dev/null || {
@@ -75,12 +77,17 @@ ENC_KEY=$(openssl rand -hex 16)
 cat > "$INSTALL_DIR/.env" <<EOF
 POSTGRES_PASSWORD=${DB_PASS}
 JWT_SECRET=${JWT_SECRET}
+JWT_EXPIRES_IN=7d
 NODE_RPC_SECRET=${RPC_SECRET}
 ENCRYPTION_KEY=${ENC_KEY}
 API_URL=https://${PANEL_DOMAIN}
 FRONTEND_URL=https://${PANEL_DOMAIN}
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ADMIN_IDS=
+CRYPTOPAY_TOKEN=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+BACKUP_ENABLED=false
 EOF
 
 cat > "$INSTALL_DIR/Caddyfile" <<EOF
@@ -103,7 +110,9 @@ log "Configuration ready"
 
 step 3/6 "Building containers (this takes a few minutes)..."
 cd "$INSTALL_DIR"
-docker compose build --parallel 2>&1 | tail -5
+if ! docker compose build --parallel 2>&1; then
+    fail "Docker build failed. Check output above."
+fi
 log "Containers built"
 
 # ──── Start ────
@@ -112,15 +121,21 @@ step 4/6 "Starting services..."
 docker compose up -d
 log "Services started"
 
-# ──── Wait for DB ────
+# ──── Wait for server ────
 
-step 5/6 "Waiting for database..."
-for i in $(seq 1 30); do
-    docker compose exec -T postgres pg_isready -U proxpanel &>/dev/null && break
-    sleep 1
+step 5/6 "Waiting for server..."
+for i in $(seq 1 60); do
+    if docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null; then
+        break
+    fi
+    sleep 2
 done
-docker compose exec -T postgres pg_isready -U proxpanel &>/dev/null || fail "Database not ready"
-log "Database ready"
+if ! docker compose exec -T server wget -q --spider http://localhost:3000/api/health &>/dev/null; then
+    warn "Server not healthy, checking logs..."
+    docker compose logs server --tail 20
+    fail "Server failed to start"
+fi
+log "Server is healthy"
 
 # ──── Migrate & Seed ────
 

@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ══════════════════════════════════════════════════════════════
 # ProxPanel v3 — Production
 # ══════════════════════════════════════════════════════════════
@@ -11,12 +9,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: proxpanel
-      POSTGRES_USER: ${POSTGRES_USER:-proxpanel}
+      POSTGRES_USER: proxpanel
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-proxpanel}"]
+      test: ["CMD-SHELL", "pg_isready -U proxpanel"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -46,18 +44,17 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-proxpanel}:${POSTGRES_PASSWORD}@postgres:5432/proxpanel?schema=public
+      DATABASE_URL: postgresql://proxpanel:${POSTGRES_PASSWORD}@postgres:5432/proxpanel?schema=public
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: 7d
-      NODE_RPC_SECRET: ${NODE_RPC_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      API_URL: ${API_URL}
-      FRONTEND_URL: ${FRONTEND_URL}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
       NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,13 +80,16 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    env_file: .env
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - server
-      - client
+      server:
+        condition: service_healthy
+      client:
+        condition: service_started
     networks:
       - proxpanel
 
