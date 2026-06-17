@@ -714,6 +714,36 @@ function generateSingboxConfig(entries: SubscriptionEntry[]): string {
         tls: { enabled: true, server_name: params.sni || entry.host },
       });
     }
+
+    if (entry.protocol === 'NaiveProxy') {
+      const settings = extractNaiveSettings(entry);
+      outbounds.push({
+        type: 'naive',
+        tag: entry.tag,
+        server: entry.host,
+        server_port: entry.port,
+        username: settings.username || 'user',
+        password: settings.password || '',
+        tls: {
+          server_name: settings.domain || settings.sni || entry.host,
+        },
+      });
+    }
+
+    if (entry.protocol === 'Mieru') {
+      const settings = extractMieruSettings(entry);
+      const transport = (settings.transport || 'tcp').toUpperCase();
+      outbounds.push({
+        type: 'mieru',
+        tag: entry.tag,
+        server: entry.host,
+        server_port: entry.port,
+        transport: transport === 'TCP,UDP' || transport === 'BOTH' ? 'TCP' : transport,
+        username: settings.username || settings.name || 'user',
+        password: settings.password || '',
+        multiplexing: settings.multiplexing || 'MULTIPLEXING_HIGH',
+      });
+    }
   }
 
   return JSON.stringify({
@@ -775,6 +805,31 @@ function extractSsPassword(uri: string): string {
     return decoded.split(':').slice(1).join(':');
   } catch {
     return '';
+  }
+}
+
+function extractNaiveSettings(entry: SubscriptionEntry): Record<string, any> {
+  try {
+    const raw = entry.raw;
+    const match = raw.match(/^naive\+https:\/\/(?:([^@]+)@)?([^:?#]+)(?::(\d+))?/);
+    if (!match) return {};
+    const userPass = match[1] || '';
+    const colonIdx = userPass.indexOf(':');
+    return {
+      username: colonIdx >= 0 ? decodeURIComponent(userPass.substring(0, colonIdx)) : userPass,
+      password: colonIdx >= 0 ? decodeURIComponent(userPass.substring(colonIdx + 1)) : '',
+      domain: match[2] || '',
+    };
+  } catch {
+    return {};
+  }
+}
+
+function extractMieruSettings(entry: SubscriptionEntry): Record<string, any> {
+  try {
+    return JSON.parse(entry.raw);
+  } catch {
+    return {};
   }
 }
 

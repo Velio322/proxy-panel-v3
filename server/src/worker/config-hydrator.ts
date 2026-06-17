@@ -385,6 +385,48 @@ export class ConfigHydrator {
     return null;
   }
 
+  // ──── Mieru Config Generation ────
+
+  generateMieruConfig(inbounds: InboundConfig[]): any[] {
+    return inbounds
+      .filter((i) => i.protocol === 'MIERU')
+      .map((i) => {
+        const settings = i.settings || {};
+        const transport = (settings.transport || 'tcp').toUpperCase();
+        return {
+          type: 'mieru',
+          tag: i.tag,
+          server: i.listen || '0.0.0.0',
+          server_port: i.port || 443,
+          transport: transport === 'TCP,UDP' || transport === 'BOTH' ? 'TCP' : transport,
+          username: settings.username || 'user',
+          password: settings.password || crypto.randomBytes(16).toString('hex'),
+          multiplexing: settings.multiplexing || 'MULTIPLEXING_HIGH',
+        };
+      });
+  }
+
+  // ──── NaiveProxy Config Generation ────
+
+  generateNaiveProxyConfig(inbounds: InboundConfig[]): any[] {
+    return inbounds
+      .filter((i) => i.protocol === 'NAIVEPROXY')
+      .map((i) => {
+        const settings = i.settings || {};
+        return {
+          type: 'naive',
+          tag: i.tag,
+          server: i.listen || '0.0.0.0',
+          server_port: i.port || 443,
+          username: settings.username || 'user',
+          password: settings.password || crypto.randomBytes(16).toString('hex'),
+          tls: {
+            server_name: settings.domain || settings.sni || '',
+          },
+        };
+      });
+  }
+
   // ──── File I/O ────
 
   writeXrayConfig(config: XrayConfig): string {
@@ -401,15 +443,15 @@ export class ConfigHydrator {
     return configPath;
   }
 
-  writeNaiveConfig(settings: any, tag: string): string {
+  writeNaiveConfig(config: any, tag: string): string {
     const configPath = path.join(this.configDir, `naive-${tag}.json`);
-    fs.writeFileSync(configPath, JSON.stringify(settings, null, 2), 'utf-8');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
     return configPath;
   }
 
-  writeMieruConfig(settings: any, tag: string): string {
+  writeMieruConfig(config: any, tag: string): string {
     const configPath = path.join(this.configDir, `mieru-${tag}.json`);
-    fs.writeFileSync(configPath, JSON.stringify(settings, null, 2), 'utf-8');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
     return configPath;
   }
 }

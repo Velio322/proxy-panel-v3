@@ -492,6 +492,20 @@ case "$INSTALL_MODE" in
         # FIX #8 (cont): RPC_SECRET is now a global var set by install_panel
         [[ -z "$RPC_SECRET" ]] && fail "Internal error: RPC_SECRET not set after panel install"
         install_node "http://127.0.0.1:3000" "$RPC_SECRET"
+        step "NODE" "Registering node in panel database..."
+        for i in $(seq 1 30); do
+            RESP=$(curl -sf -X POST "http://127.0.0.1:3000/api/v1/nodes/self/register" \
+                -H 'Content-Type: application/json' \
+                -d "{\"token\":\"${RPC_SECRET}\",\"name\":\"local-node\",\"host\":\"127.0.0.1\",\"port\":443,\"apiPort\":2087}" 2>/dev/null)
+            if echo "$RESP" | grep -q '"nodeId"'; then
+                log "Node registered in panel database"
+                break
+            fi
+            if [ "$i" -eq 30 ]; then
+                warn "Node auto-registration timed out. The worker will register itself on first connection."
+            fi
+            sleep 2
+        done
         ;;
 esac
 

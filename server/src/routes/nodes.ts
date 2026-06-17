@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import net from 'net';
 import { z } from 'zod';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
@@ -10,6 +11,53 @@ const router = Router();
 router.use(authenticate);
 
 const nodeService = new NodeService();
+
+function checkReachability(host: string, port: number, timeoutMs = 5000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeoutMs);
+    socket.on('connect', () => { socket.destroy(); resolve(true); });
+    socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    socket.on('error', () => { socket.destroy(); resolve(false); });
+    socket.connect(port, host);
+  });
+}
+
+function isLocalHost(host: string): boolean {
+  return ['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(host);
+}
+
+function buildSetupInstructions(nodeSecret: string, apiPort: number): string {
+  return [
+    '=== Remote Node Setup Instructions ===',
+    '',
+    'Option 1: Automatic installation',
+    '  Run on the remote server:',
+    `  bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh)`,
+    '  Select "Node only" and enter the panel URL + secret below.',
+    '',
+    'Option 2: Manual installation',
+    '  1. Install Node.js 18+ on the remote server',
+    '  2. Download the worker source:',
+    '     curl -sL https://github.com/Velio322/proxy-panel-v3/archive/refs/heads/main.tar.gz | tar xz',
+    '     cd proxy-panel-v3-main/server && npm install --no-workspaces && npx prisma generate && npm run build',
+    '  3. Create .env file:',
+    `     MASTER_URL=https://<YOUR_PANEL_DOMAIN>`,
+    `     NODE_RPC_SECRET=${nodeSecret}`,
+    `     WORKER_PORT=${apiPort}`,
+    '     CONFIG_DIR=/etc/proxpanel',
+    '     XRAY_BIN=/usr/local/bin/xray',
+    '     SINGBOX_BIN=/usr/local/bin/sing-box',
+    '     NAIVE_BIN=/usr/local/bin/naive',
+    '     MIERU_BIN=/usr/local/bin/mieru',
+    '  4. Download proxy binaries (Xray, sing-box) to the paths above',
+    '  5. Start the worker: node dist/worker/index.js',
+    '',
+    `Secret: ${nodeSecret}`,
+    `API Port: ${apiPort}`,
+    '=========================================',
+  ].join('\n');
+}
 
 const createNodeSchema = z.object({
   name: z.string().min(1),
@@ -88,8 +136,24 @@ router.post('/', requireAdmin, auditLog('CREATE', 'node'), async (req: AuthReque
   try {
     const prisma = getPrisma();
     const data = createNodeSchema.parse(req.body);
+
+    // Check reachability for remote nodes
+    if (!isLocalHost(data.host)) {
+      const reachable = await checkReachability(data.host, data.apiPort);
+      if (!reachable) {
+        return res.status(422).json({
+          error: `Node at ${data.host}:${data.apiPort} is unreachable. Check firewall rules and ensure the worker is running.`,
+          reachable: false,
+          setupInstructions: buildSetupInstructions(data.secret, data.apiPort),
+        });
+      }
+    }
+
     const node = await prisma.node.create({ data });
-    res.status(201).json(node);
+    res.status(201).json({
+      ...node,
+      setupInstructions: isLocalHost(data.host) ? undefined : buildSetupInstructions(data.secret, data.apiPort),
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation error', details: error.errors });

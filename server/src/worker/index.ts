@@ -1,4 +1,6 @@
 import express from 'express';
+import http from 'http';
+import os from 'os';
 import { config } from '../config';
 import path from 'path';
 import { ProcessManager } from './process-manager';
@@ -6,6 +8,54 @@ import { MasterClient } from './master-client';
 import { createWorkerAPI } from './api/routes';
 
 const WORKER_VERSION = '2.0.0';
+
+async function registerNode(masterUrl: string, nodeSecret: string): Promise<void> {
+  const url = `${masterUrl}/api/v1/nodes/self/register`;
+  const payload = JSON.stringify({
+    token: nodeSecret,
+    name: os.hostname() || `node-${Date.now()}`,
+    host: '0.0.0.0',
+    port: 443,
+    apiPort: config.worker.port,
+    system: { release: WORKER_VERSION },
+  });
+
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const parsed = new URL(url);
+        const req = http.request({
+          hostname: parsed.hostname,
+          port: parsed.port,
+          path: parsed.pathname,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) },
+          timeout: 5000,
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              console.log(`[Worker] Registered with master: ${data}`);
+              resolve();
+            } else {
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        req.write(payload);
+        req.end();
+      });
+      return;
+    } catch (err: any) {
+      console.log(`[Worker] Register attempt ${attempt}/30 failed: ${err.message}`);
+      if (attempt < 30) await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  console.error('[Worker] Failed to register after 30 attempts');
+}
 
 async function main() {
   console.log(`
@@ -51,6 +101,9 @@ async function main() {
 
   // Connect to master if configured
   if (config.worker.masterUrl) {
+    // Register node with master before connecting WebSocket
+    await registerNode(config.worker.masterUrl, config.worker.nodeSecret);
+
     masterClient = new MasterClient({
       masterUrl: config.worker.masterUrl,
       nodeSecret: config.worker.nodeSecret,
