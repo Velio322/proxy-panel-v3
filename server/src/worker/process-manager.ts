@@ -366,11 +366,15 @@ export class ProcessManager extends EventEmitter {
       const xrayInbounds = remappedInbounds.filter((i) =>
         ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(i.protocol) && i.enable
       );
+
+      // sing-box-extended handles HYSTERIA2, TUIC, NAIVEPROXY and MIERU
       const singboxInbounds = remappedInbounds.filter((i) =>
-        ['HYSTERIA2', 'TUIC'].includes(i.protocol) && i.enable
+        ['HYSTERIA2', 'TUIC', 'NAIVEPROXY', 'MIERU'].includes(i.protocol) && i.enable
       );
-      const naiveInbounds = remappedInbounds.filter((i) => i.protocol === 'NAIVEPROXY' && i.enable);
-      const mieruInbounds = remappedInbounds.filter((i) => i.protocol === 'MIERU' && i.enable);
+
+      // Legacy separate-binary fallback (used only if sing-box-extended not available)
+      const naiveInbounds: typeof remappedInbounds = [];
+      const mieruInbounds: typeof remappedInbounds = [];
 
       let allSuccess = true;
 
@@ -386,15 +390,19 @@ export class ProcessManager extends EventEmitter {
         if (!this.spawnCore('singbox', this.singbox)) allSuccess = false;
       }
 
-      for (const inbound of naiveInbounds) {
-        if (!this.naive.start(inbound)) allSuccess = false;
+      // Legacy fallback: if singbox failed and binary exists, try standalone managers
+      if (!this.singbox.isRunning()) {
+        const naiveFallback = singboxInbounds.filter(i => i.protocol === 'NAIVEPROXY');
+        const mieruFallback = singboxInbounds.filter(i => i.protocol === 'MIERU');
+        for (const inbound of naiveFallback) {
+          if (!this.naive.start(inbound)) allSuccess = false;
+        }
+        for (const inbound of mieruInbounds) {
+          if (!this.mieru.start(inbound)) allSuccess = false;
+        }
       }
 
-      for (const inbound of mieruInbounds) {
-        if (!this.mieru.start(inbound)) allSuccess = false;
-      }
-
-      console.log(`[PM] Config applied. Xray:${xrayInbounds.length} Singbox:${singboxInbounds.length} Naive:${naiveInbounds.length} Mieru:${mieruInbounds.length}`);
+      console.log(`[PM] Config applied. Xray:${xrayInbounds.length} Singbox(extended):${singboxInbounds.length} (naive:${singboxInbounds.filter(i=>i.protocol==='NAIVEPROXY').length} mieru:${singboxInbounds.filter(i=>i.protocol==='MIERU').length})`);
       return allSuccess;
     } catch (error: any) {
       console.error(`[PM] Failed to apply config: ${error.message}`);

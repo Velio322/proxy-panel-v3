@@ -31,8 +31,9 @@ export class SingboxManager {
   }
 
   generateConfig(inbounds: InboundConfig[]): any {
+    // sing-box-extended supports: HYSTERIA2, TUIC, NAIVEPROXY, MIERU
     const singboxInbounds = inbounds
-      .filter((i) => ['HYSTERIA2', 'TUIC'].includes(i.protocol))
+      .filter((i) => ['HYSTERIA2', 'TUIC', 'NAIVEPROXY', 'MIERU'].includes(i.protocol))
       .map((inbound) => this.buildInbound(inbound))
       .filter((i): i is NonNullable<typeof i> => i !== null);
 
@@ -118,6 +119,97 @@ export class SingboxManager {
           server_name: settings.sni || '',
           alpn: ['h3'],
         },
+      };
+    }
+
+    // ── NaiveProxy — sing-box-extended "naive" inbound ──
+    // Requires sing-box compiled with with_naive_outbound tag (extended build)
+    if (inbound.protocol === 'NAIVEPROXY') {
+      const users: Array<{ username: string; password: string }> = [];
+
+      // Support multi-user via clients array
+      if (Array.isArray(settings.clients) && settings.clients.length > 0) {
+        for (const c of settings.clients) {
+          users.push({
+            username: c.username || c.name || 'user',
+            password: c.password || crypto.randomBytes(16).toString('hex'),
+          });
+        }
+      } else {
+        users.push({
+          username: settings.username || settings.user || 'user',
+          password: settings.password || crypto.randomBytes(16).toString('hex'),
+        });
+      }
+
+      const result: any = {
+        type: 'naive',
+        tag: inbound.tag,
+        listen: inbound.listen || '::',
+        listen_port: inbound.port,
+        users,
+        tls: {
+          enabled: true,
+          server_name: settings.sni || settings.domain || '',
+          alpn: ['h3', 'http/1.1'],
+        },
+      };
+
+      // Optional: ACME auto-cert
+      if (settings.domain && settings.email) {
+        result.tls.acme = {
+          domain: [settings.domain],
+          email: settings.email,
+          provider: 'letsencrypt',
+        };
+      } else if (settings.certFile && settings.keyFile) {
+        result.tls.certificate_path = settings.certFile;
+        result.tls.key_path = settings.keyFile;
+      }
+
+      return result;
+    }
+
+    // ── Mieru — sing-box-extended "mieru" inbound ──
+    // Requires sing-box-extended build (1.x.x-extended-y.z.w)
+    // Mieru uses its own protocol over TCP/UDP
+    if (inbound.protocol === 'MIERU') {
+      const users: Array<{ name: string; password: string }> = [];
+
+      if (Array.isArray(settings.clients) && settings.clients.length > 0) {
+        for (const c of settings.clients) {
+          users.push({
+            name: c.username || c.name || 'user',
+            password: c.password || crypto.randomBytes(16).toString('hex'),
+          });
+        }
+      } else {
+        users.push({
+          name: settings.username || 'user',
+          password: settings.password || crypto.randomBytes(16).toString('hex'),
+        });
+      }
+
+      // Transport: TCP, UDP or both
+      const transport = (settings.transport || 'tcp').toLowerCase();
+      const portBindings: Array<{ port: number; protocol: string }> = [];
+      if (transport === 'tcp' || transport === 'both' || transport === 'tcp,udp') {
+        portBindings.push({ port: inbound.port, protocol: 'TCP' });
+      }
+      if (transport === 'udp' || transport === 'both' || transport === 'tcp,udp') {
+        portBindings.push({ port: inbound.port, protocol: 'UDP' });
+      }
+      if (portBindings.length === 0) {
+        portBindings.push({ port: inbound.port, protocol: 'TCP' });
+      }
+
+      return {
+        type: 'mieru',
+        tag: inbound.tag,
+        listen: inbound.listen || '::',
+        listen_port: inbound.port,
+        users,
+        transport: portBindings.map(b => b.protocol.toLowerCase()),
       };
     }
 

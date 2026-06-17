@@ -304,9 +304,8 @@ NODE_RPC_SECRET=${NODE_SECRET}
 WORKER_PORT=2087
 CONFIG_DIR=/etc/proxpanel
 XRAY_BIN=/usr/local/bin/xray
+# sing-box v1.13.12 built with with_naive_outbound — handles NaiveProxy AND Mieru inbounds
 SINGBOX_BIN=/usr/local/bin/sing-box
-NAIVE_BIN=/usr/local/bin/naive
-MIERU_BIN=/usr/local/bin/mieru
 NODE_ENV=production
 EOF
 
@@ -344,55 +343,43 @@ EOF
         log "Xray already installed: $(/usr/local/bin/xray version 2>&1 | head -1)"
     fi
 
-    # ── sing-box ──
+    # ── sing-box (v1.13.12, built with with_naive_outbound — supports NaiveProxy & Mieru inbounds) ──
+    # Separate naive/mieru binaries are no longer needed; sing-box handles both protocols.
     if [[ ! -f /usr/local/bin/sing-box ]]; then
-        local SING_VER; SING_VER=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name')
+        # Pinned to v1.13.12 which includes with_naive_outbound build tag.
+        # To upgrade, change SING_PINNED_VER below; the fallback logic finds the latest stable release.
+        local SING_PINNED_VER="1.13.12"
+        local SING_VER="v${SING_PINNED_VER}"
+
+        # Fallback: resolve latest non-alpha/non-beta stable release from GitHub API
+        if [[ "$SING_PINNED_VER" == "" ]]; then
+            SING_VER=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases | \
+                jq -r '[.[] | select(.prerelease==false and (.tag_name | test("alpha|beta") | not)) | .tag_name] | first')
+        fi
+
         if [[ -n "$SING_VER" && "$SING_VER" != "null" ]]; then
             local SING_TAG="${SING_VER#v}"
             local SING_ARCH="amd64"
             [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && SING_ARCH="arm64"
             local SING_URL="https://github.com/SagerNet/sing-box/releases/download/${SING_VER}/sing-box-${SING_TAG}-linux-${SING_ARCH}.tar.gz"
             if wget -qO /tmp/sing.tar.gz "$SING_URL"; then
-                # FIX #14: Extract the correct binary name from the archive
                 tar -xzf /tmp/sing.tar.gz -C /tmp/
                 local SING_BIN; SING_BIN=$(find /tmp -maxdepth 2 -name 'sing-box' -type f 2>/dev/null | head -1)
                 if [[ -n "$SING_BIN" ]]; then
                     mv "$SING_BIN" /usr/local/bin/sing-box && chmod +x /usr/local/bin/sing-box
-                    log "sing-box ${SING_VER} installed"
+                    log "sing-box ${SING_VER} installed (NaiveProxy + Mieru support via with_naive_outbound)"
                 else
                     warn "sing-box binary not found in archive"
                 fi
-                rm -f /tmp/sing.tar.gz
+                rm -rf /tmp/sing.tar.gz /tmp/sing-box-*
             else
                 warn "Failed to download sing-box — skipping"
             fi
         else
-            warn "Could not fetch latest sing-box version"
+            warn "Could not resolve sing-box version"
         fi
     else
-        log "sing-box already installed"
-    fi
-
-    # ── Mieru (optional) ──
-    if [[ ! -f /usr/local/bin/mieru ]]; then
-        local MIERU_ARCH="amd64"
-        [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && MIERU_ARCH="arm64"
-        local MIERU_VER; MIERU_VER=$(curl -s https://api.github.com/repos/enfein/mieru/releases/latest | jq -r '.tag_name')
-        if [[ -n "$MIERU_VER" && "$MIERU_VER" != "null" ]]; then
-            local MIERU_TAG="${MIERU_VER#v}"
-            local MIERU_URL="https://github.com/enfein/mieru/releases/download/${MIERU_VER}/mita-${MIERU_TAG}-linux-${MIERU_ARCH}.tar.gz"
-            if wget -qO /tmp/mieru.tar.gz "$MIERU_URL" 2>/dev/null; then
-                tar -xzf /tmp/mieru.tar.gz -C /usr/local/bin/ --wildcards '*/mita' --strip-components=1 2>/dev/null || \
-                tar -xzf /tmp/mieru.tar.gz -C /usr/local/bin/ 2>/dev/null || true
-                [[ -f /usr/local/bin/mita ]] && mv /usr/local/bin/mita /usr/local/bin/mieru
-                [[ -f /usr/local/bin/mieru ]] && chmod +x /usr/local/bin/mieru && log "Mieru ${MIERU_VER} installed"
-                rm -f /tmp/mieru.tar.gz
-            else
-                warn "Mieru not available for this architecture — skipping"
-            fi
-        fi
-    else
-        log "Mieru already installed"
+        log "sing-box already installed: $(/usr/local/bin/sing-box version 2>&1 | head -1)"
     fi
 
     # ──── Build TypeScript ────
