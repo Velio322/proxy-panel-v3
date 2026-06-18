@@ -19,6 +19,12 @@ Select mode:
 bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/uninstall.sh)
 ```
 
+## Update
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/update.sh)
+```
+
 ## Supported protocols
 
 - VLESS (Reality/XTLS-Vision)
