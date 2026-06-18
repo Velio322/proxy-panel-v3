@@ -142,6 +142,39 @@ install_panel() {
     RPC_SECRET=$(generate_secret)
     local ENC_KEY; ENC_KEY=$(openssl rand -hex 16)
 
+    local TG_BOT=""
+    local TG_ADMINS=""
+    local CRYPTO_TOKEN=""
+    local STRIPE_KEY=""
+    local STRIPE_WH=""
+    local BACKUP_VAL="false"
+
+    if [[ -f "$PANEL_DIR/.env" ]]; then
+        log "Preserving existing panel configuration from $PANEL_DIR/.env"
+        local EX_DB_PASS; EX_DB_PASS=$(sed -n 's/^POSTGRES_PASSWORD=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_JWT_SECRET; EX_JWT_SECRET=$(sed -n 's/^JWT_SECRET=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_RPC_SECRET; EX_RPC_SECRET=$(sed -n 's/^NODE_RPC_SECRET=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_ENC_KEY; EX_ENC_KEY=$(sed -n 's/^ENCRYPTION_KEY=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_TG_BOT; EX_TG_BOT=$(sed -n 's/^TELEGRAM_BOT_TOKEN=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_TG_ADMINS; EX_TG_ADMINS=$(sed -n 's/^TELEGRAM_ADMIN_IDS=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_CRYPTO; EX_CRYPTO=$(sed -n 's/^CRYPTOPAY_TOKEN=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_STRIPE; EX_STRIPE=$(sed -n 's/^STRIPE_SECRET_KEY=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_STRIPE_WH; EX_STRIPE_WH=$(sed -n 's/^STRIPE_WEBHOOK_SECRET=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+        local EX_BACKUP; EX_BACKUP=$(sed -n 's/^BACKUP_ENABLED=\(.*\)/\1/p' "$PANEL_DIR/.env" | tr -d '"'\''')
+
+        [[ -n "$EX_DB_PASS" ]] && DB_PASS="$EX_DB_PASS"
+        [[ -n "$EX_JWT_SECRET" ]] && JWT_SECRET="$EX_JWT_SECRET"
+        [[ -n "$EX_RPC_SECRET" ]] && RPC_SECRET="$EX_RPC_SECRET"
+        [[ -n "$EX_ENC_KEY" ]] && ENC_KEY="$EX_ENC_KEY"
+        
+        TG_BOT="${EX_TG_BOT:-}"
+        TG_ADMINS="${EX_TG_ADMINS:-}"
+        CRYPTO_TOKEN="${EX_CRYPTO:-}"
+        STRIPE_KEY="${EX_STRIPE:-}"
+        STRIPE_WH="${EX_STRIPE_WH:-}"
+        BACKUP_VAL="${EX_BACKUP:-false}"
+    fi
+
     cat > "$PANEL_DIR/.env" <<EOF
 POSTGRES_PASSWORD=${DB_PASS}
 JWT_SECRET=${JWT_SECRET}
@@ -150,12 +183,12 @@ NODE_RPC_SECRET=${RPC_SECRET}
 ENCRYPTION_KEY=${ENC_KEY}
 API_URL=https://${PANEL_DOMAIN}
 FRONTEND_URL=https://${PANEL_DOMAIN}
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_ADMIN_IDS=
-CRYPTOPAY_TOKEN=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-BACKUP_ENABLED=false
+TELEGRAM_BOT_TOKEN=${TG_BOT}
+TELEGRAM_ADMIN_IDS=${TG_ADMINS}
+CRYPTOPAY_TOKEN=${CRYPTO_TOKEN}
+STRIPE_SECRET_KEY=${STRIPE_KEY}
+STRIPE_WEBHOOK_SECRET=${STRIPE_WH}
+BACKUP_ENABLED=${BACKUP_VAL}
 EOF
 
     # FIX #9: Generate proper Caddyfile (no variable substitution issues at runtime)
@@ -476,14 +509,58 @@ case "$INSTALL_MODE" in
         install_panel
         ;;
     node)
-        echo -e "\n  ${BOLD}Node configuration:${NC}\n"
-        read -rp "  Panel URL (e.g. https://panel.yourdomain.com): " MASTER_URL
-        read -rp "  Node secret (from panel Settings page):        " NODE_SECRET
-        [[ -z "$MASTER_URL"   ]] && fail "Panel URL is required"
-        [[ -z "$NODE_SECRET"  ]] && fail "Node secret is required"
+        # Check if local panel exists
+        if [[ -f "/opt/proxpanel/.env" ]]; then
+            echo -e "\n  ${GREEN}Local ProxPanel installation detected!${NC}"
+            echo -e "  Configuring node automatically using panel settings...\n"
+            
+            # Read secrets from .env using sed for portability
+            NODE_SECRET=$(sed -n 's/^NODE_RPC_SECRET=\(.*\)/\1/p' /opt/proxpanel/.env | tr -d '"'\''')
+            MASTER_URL="http://127.0.0.1:3000"
+            log "Detected local node secret"
+        else
+            echo -e "\n  ${BOLD}Node configuration:${NC}\n"
+            read -rp "  Panel URL (e.g. https://panel.yourdomain.com): " MASTER_URL
+            read -rp "  Node secret (from panel Settings page):        " NODE_SECRET
+            [[ -z "$MASTER_URL"   ]] && fail "Panel URL is required"
+            [[ -z "$NODE_SECRET"  ]] && fail "Node secret is required"
+        fi
+        
         # FIX: Normalize URL — strip trailing slash
         MASTER_URL="${MASTER_URL%/}"
         install_node "$MASTER_URL" "$NODE_SECRET"
+        
+        # If it was a local panel, also auto-register it!
+        if [[ -f "/opt/proxpanel/.env" ]]; then
+            step "NODE" "Registering local node in panel database..."
+            # Wait up to 60s for the panel API to become available
+            echo -e "  Waiting for panel API to be ready..."
+            for i in $(seq 1 20); do
+                if curl -sf http://127.0.0.1:3000/api/health &>/dev/null; then
+                    break
+                fi
+                sleep 3
+                echo -ne "\r  Waiting... $((i*3))s / 60s"
+            done
+            echo ""
+
+            REGISTERED=false
+            for i in $(seq 1 20); do
+                RESP=$(curl -s -X POST "http://127.0.0.1:3000/api/v1/nodes/self/register" \
+                    -H 'Content-Type: application/json' \
+                    -d "{\"token\":\"${NODE_SECRET}\",\"name\":\"local-node\",\"host\":\"127.0.0.1\",\"port\":443,\"apiPort\":2087}" 2>/dev/null)
+                if echo "$RESP" | grep -q '"nodeId"'; then
+                    NODE_ID=$(echo "$RESP" | sed -n 's/.*"nodeId":"\([^"]*\)".*/\1/p' 2>/dev/null || echo "unknown")
+                    log "Local node registered in panel (id: ${NODE_ID:-unknown})"
+                    REGISTERED=true
+                    break
+                fi
+                sleep 3
+            done
+            if [[ "$REGISTERED" == "false" ]]; then
+                warn "Could not register node in panel automatically. The node will register on heartbeat."
+            fi
+        fi
         ;;
     both)
         install_panel
