@@ -6,6 +6,9 @@ import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
 import { auditLog } from '../middleware/audit';
 import { NodeService } from '../services/nodeService';
 import { cacheGet, cacheSet, cacheDel } from '../lib/redis';
+import { spawn } from 'child_process';
+import path from 'path';
+import crypto from 'crypto';
 
 const router = Router();
 router.use(authenticate);
@@ -265,6 +268,83 @@ router.get('/:id/metrics', async (req: AuthRequest, res: Response) => {
     res.json(node);
   } catch {
     res.status(500).json({ error: 'Failed to fetch metrics' });
+  }
+});
+
+// Helper functions for local node setup
+function checkLocalPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close();
+      resolve(true);
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function findLocalFreePort(startPort: number, excludePorts: number[] = []): Promise<number> {
+  let port = startPort;
+  while (true) {
+    if (!excludePorts.includes(port)) {
+      const available = await checkLocalPortAvailable(port);
+      if (available) return port;
+    }
+    port++;
+  }
+}
+
+async function runLocalDeploymentWorker(nodeId: string, token: string, apiPort: number, sftpPort: number) {
+  console.log(`[DeployWorker] Starting local node deployment for node: ${nodeId}...`);
+  const deployScript = path.resolve(__dirname, '../../../scripts/deploy-local-node.sh');
+  
+  const child = spawn('bash', [deployScript, nodeId, token, String(apiPort), String(sftpPort)], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+}
+
+router.post('/local', requireAdmin, auditLog('CREATE', 'node'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Node name is required' });
+
+    const prisma = getPrisma();
+
+    // Find free ports
+    const panelPort = parseInt(process.env.API_PORT || '3000', 10);
+    const apiPort = await findLocalFreePort(2087, [panelPort, 80, 443]);
+    const sftpPort = await findLocalFreePort(2022, [panelPort, 80, 443, apiPort]);
+
+    const token = crypto.randomBytes(32).toString('hex');
+
+    const node = await prisma.node.create({
+      data: {
+        name,
+        host: '127.0.0.1',
+        port: 443,
+        apiPort,
+        secret: token,
+        status: 'OFFLINE',
+        active: true,
+      },
+    });
+
+    // Run deployment in background
+    runLocalDeploymentWorker(node.id, token, apiPort, sftpPort).catch((err) => {
+      console.error('[DeployWorker] Error:', err);
+    });
+
+    res.status(202).json({
+      message: 'Node installation initiated',
+      nodeId: node.id,
+      apiPort,
+      sftpPort,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
