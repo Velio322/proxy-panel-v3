@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Node } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
@@ -28,6 +29,18 @@ export function NodeCard({
   const { t } = useI18n();
   const [menu, setMenu] = useState(false);
   const [copied, setCopied] = useState('');
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+
+  useEffect(() => {
+    if (menu && menuBtnRef.current) {
+      const rect = menuBtnRef.current.getBoundingClientRect();
+      setMenuPos({
+        top: rect.bottom + window.scrollY + 6,
+        right: window.innerWidth - rect.right,
+      });
+    }
+  }, [menu]);
 
   const copy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -42,7 +55,7 @@ export function NodeCard({
 
   return (
     <div className={cn(
-      "group relative bg-surface border rounded-xl overflow-hidden transition-all duration-300 shadow-sm",
+      "group relative bg-surface border rounded-xl transition-all duration-300 shadow-sm",
       "hover:shadow-md hover:border-border",
       selected ? "border-fg ring-1 ring-fg ring-offset-0" : "border-border"
     )}>
@@ -76,13 +89,20 @@ export function NodeCard({
               {n.status}
             </span>
             <div className="relative">
-              <button onClick={() => setMenu(!menu)} className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all opacity-0 group-hover:opacity-100 border border-transparent hover:border-border shadow-sm">
+              <button
+                ref={menuBtnRef}
+                onClick={() => setMenu(!menu)}
+                className="p-1.5 rounded-md hover:bg-bg-raised text-fg-subtle hover:text-fg transition-all opacity-0 group-hover:opacity-100 border border-transparent hover:border-border shadow-sm"
+              >
                 <MoreVertical size={14} />
               </button>
-              {menu && (
+              {menu && createPortal(
                 <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-40 bg-surface border border-border rounded-lg shadow-xl z-20 py-1.5 animate-in fade-in slide-in-from-top-1">
+                  <div className="fixed inset-0 z-[9998]" onClick={() => setMenu(false)} />
+                  <div
+                    className="fixed w-44 bg-surface border border-border rounded-lg shadow-xl z-[9999] py-1.5 animate-in fade-in slide-in-from-top-1"
+                    style={{ top: menuPos.top, right: menuPos.right }}
+                  >
                     <button onClick={() => { onDetail(); setMenu(false); }} className="w-full px-3 py-1.5 text-left text-xs text-fg hover:bg-bg-raised flex items-center gap-2.5 transition-colors">
                       <Eye size={14} className="text-fg-subtle" /> {t('nodes.details')}
                     </button>
@@ -103,7 +123,8 @@ export function NodeCard({
                       <Trash2 size={14} /> {t('nodes.delete')}
                     </button>
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           </div>
@@ -122,7 +143,7 @@ export function NodeCard({
         </div>
       </div>
 
-      <div className="px-4 py-2.5 bg-bg-raised border-t border-border-subtle flex items-center justify-between">
+      <div className="px-4 py-2.5 bg-bg-raised border-t border-border-subtle flex items-center justify-between rounded-b-xl">
         <div className="flex items-center gap-2 text-[10px] text-fg-subtle font-bold uppercase tracking-tight">
           <span className="flex items-center gap-1 text-fg-muted"><Server size={10} /> {inboundCount}</span>
           <span className="text-zinc-200">|</span>
