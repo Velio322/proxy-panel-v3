@@ -342,6 +342,8 @@ router.post('/local', requireAdmin, auditLog('CREATE', 'node'), async (req: Auth
       nodeId: node.id,
       apiPort,
       sftpPort,
+      token,
+      apiUrl: process.env.API_URL || 'http://127.0.0.1:3000',
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

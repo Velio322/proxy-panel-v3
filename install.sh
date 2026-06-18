@@ -19,6 +19,26 @@ NODE_SERVICE="proxpanel-node"
 # FIX #1: RPC_SECRET must be declared at global scope so 'both' mode can pass it to install_node
 RPC_SECRET=""
 
+# Parse command-line arguments if provided
+INSTALL_MODE=""
+MASTER_URL=""
+NODE_SECRET=""
+
+if [[ $# -gt 0 ]]; then
+    ARG_MODE="$1"
+    if [[ "$ARG_MODE" == "panel" || "$ARG_MODE" == "1" ]]; then
+        INSTALL_MODE="panel"
+    elif [[ "$ARG_MODE" == "node" || "$ARG_MODE" == "2" ]]; then
+        INSTALL_MODE="node"
+        if [[ $# -ge 3 ]]; then
+            MASTER_URL="$2"
+            NODE_SECRET="$3"
+        fi
+    elif [[ "$ARG_MODE" == "both" || "$ARG_MODE" == "3" ]]; then
+        INSTALL_MODE="both"
+    fi
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -48,21 +68,23 @@ echo -e "${CYAN}${BOLD}╚══════════════════
 
 # ──── Mode selection ────
 
-echo -e "  ${BOLD}Select installation mode:${NC}\n"
-echo -e "    ${CYAN}1${NC}) Panel only  — web dashboard + database (Docker)"
-echo -e "    ${CYAN}2${NC}) Node only   — proxy worker on this server (systemd)"
-echo -e "    ${CYAN}3${NC}) Panel + Node — all-in-one server\n"
+if [[ -z "$INSTALL_MODE" ]]; then
+    echo -e "  ${BOLD}Select installation mode:${NC}\n"
+    echo -e "    ${CYAN}1${NC}) Panel only  — web dashboard + database (Docker)"
+    echo -e "    ${CYAN}2${NC}) Node only   — proxy worker on this server (systemd)"
+    echo -e "    ${CYAN}3${NC}) Panel + Node — all-in-one server\n"
 
-# FIX #3: Loop until valid input instead of single read
-while true; do
-    read -rp "  Enter choice [1-3]: " MODE
-    case "$MODE" in
-        1) INSTALL_MODE="panel"; break ;;
-        2) INSTALL_MODE="node";  break ;;
-        3) INSTALL_MODE="both";  break ;;
-        *) echo -e "  ${RED}Invalid choice. Please enter 1, 2, or 3.${NC}" ;;
-    esac
-done
+    # FIX #3: Loop until valid input instead of single read
+    while true; do
+        read -rp "  Enter choice [1-3]: " MODE
+        case "$MODE" in
+            1) INSTALL_MODE="panel"; break ;;
+            2) INSTALL_MODE="node";  break ;;
+            3) INSTALL_MODE="both";  break ;;
+            *) echo -e "  ${RED}Invalid choice. Please enter 1, 2, or 3.${NC}" ;;
+        esac
+    done
+fi
 
 # ══════════════════════════════════════════════════════════════
 # PANEL INSTALL
@@ -201,6 +223,9 @@ ${PANEL_DOMAIN} {
         reverse_proxy server:3000
     }
     handle /sub/* {
+        reverse_proxy server:3000
+    }
+    handle /ws/* {
         reverse_proxy server:3000
     }
     handle {
@@ -509,8 +534,10 @@ case "$INSTALL_MODE" in
         install_panel
         ;;
     node)
-        # Check if local panel exists
-        if [[ -f "/opt/proxpanel/.env" ]]; then
+        # Check if local panel exists or arguments are provided
+        if [[ -n "$MASTER_URL" && -n "$NODE_SECRET" ]]; then
+            log "Using master URL and node secret from command-line arguments"
+        elif [[ -f "/opt/proxpanel/.env" ]]; then
             echo -e "\n  ${GREEN}Local ProxPanel installation detected!${NC}"
             echo -e "  Configuring node automatically using panel settings...\n"
             

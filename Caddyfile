@@ -8,6 +8,9 @@ piskasosiska.ru {
     handle /sub/* {
         reverse_proxy server:3000
     }
+    handle /ws/* {
+        reverse_proxy server:3000
+    }
     handle {
         reverse_proxy client:80
     }

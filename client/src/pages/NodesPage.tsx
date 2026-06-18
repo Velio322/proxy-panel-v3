@@ -10,6 +10,7 @@ import { NodesTable } from './nodes/components/NodesTable';
 import { CreateNodeModal } from './nodes/components/CreateNodeModal';
 import { EditNodeModal } from './nodes/components/EditNodeModal';
 import { DetailModal } from './nodes/components/DetailModal';
+import { Modal } from './nodes/components/common';
 
 export function NodesPage() {
   const { t } = useI18n();
@@ -51,11 +52,14 @@ export function NodesPage() {
     onError: (err: any) => alert(`Delete failed: ${err?.response?.data?.error || err.message}`),
   });
 
+  const [localInstallResult, setLocalInstallResult] = useState<{ token: string; apiUrl: string; apiPort: number; sftpPort: number } | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const createLocalMut = useMutation({
     mutationFn: (data: { name: string }) => nodesApi.createLocal(data).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['nodes'] });
-      alert("Локальная нода успешно создается в фоновом режиме. Она появится в списке через минуту.");
+      setLocalInstallResult(data);
     },
     onError: (err: any) => alert(`Ошибка установки локальной ноды: ${err?.response?.data?.error || err.message}`),
   });
@@ -174,10 +178,57 @@ export function NodesPage() {
         />
       )}
 
-      {/* Modals */}
       {showCreate && <CreateNodeModal onClose={() => setShowCreate(false)} />}
       {editNode && <EditNodeModal node={editNode} onClose={() => setEditNode(null)} />}
       {detailNode && <DetailModal node={detailNode} onClose={() => setDetailNode(null)} />}
+
+      {localInstallResult && (
+        <Modal onClose={() => setLocalInstallResult(null)} title="Установка локальной ноды">
+          <div className="space-y-4">
+            <p className="text-sm text-fg-muted">
+              Локальная нода настраивается в фоновом режиме. Если она не перейдет в статус <strong>ОНЛАЙН</strong> в течение 30 секунд (например, если панель работает в изолированном контейнере Docker), выполните следующую команду в терминале вашего сервера для ручной установки:
+            </p>
+
+            <div className="relative bg-bg-raised border border-border rounded-lg p-3 font-mono text-xs break-all pr-16 text-fg">
+              {`curl -sL https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh | sudo bash -s -- node ${localInstallResult.apiUrl} ${localInstallResult.token}`}
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`curl -sL https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh | sudo bash -s -- node ${localInstallResult.apiUrl} ${localInstallResult.token}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="absolute top-2.5 right-2.5 px-2 py-1 rounded-md bg-surface hover:bg-bg-raised border border-border text-fg-subtle transition-colors text-[10px] font-semibold"
+              >
+                {copied ? "Скопировано!" : "Копировать"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-bg-raised p-3 rounded-lg border border-border text-xs text-fg-muted">
+              <div>
+                <span className="block text-[10px] uppercase font-semibold text-fg-subtle">Порт API (Node Worker):</span>
+                <span className="font-mono text-fg font-semibold">{localInstallResult.apiPort}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase font-semibold text-fg-subtle">Порт SFTP:</span>
+                <span className="font-mono text-fg font-semibold">{localInstallResult.sftpPort}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="block text-[10px] uppercase font-semibold text-fg-subtle">Токен (Secret):</span>
+                <span className="font-mono text-fg font-semibold break-all">{localInstallResult.token}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setLocalInstallResult(null)}
+                className="px-4 py-2 bg-fg text-surface rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity"
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
