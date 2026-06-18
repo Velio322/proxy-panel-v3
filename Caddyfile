@@ -1,8 +1,11 @@
-{$PANEL_DOMAIN} {
+piskasosiska.ru {
     handle /api/* {
         reverse_proxy server:3000
     }
     handle /health {
+        reverse_proxy server:3000
+    }
+    handle /sub/* {
         reverse_proxy server:3000
     }
     handle {
