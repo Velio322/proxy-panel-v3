@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
 import { auditLog } from '../middleware/audit';
@@ -69,6 +70,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     res.json(serializeBigInt(inbounds));
   } catch {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/generate-reality-keys', requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('x25519');
+    const pubJwk = publicKey.export({ format: 'jwk' });
+    const privJwk = privateKey.export({ format: 'jwk' });
+    const shortId = crypto.randomBytes(8).toString('hex');
+
+    res.json({
+      publicKey: pubJwk.x || '',
+      privateKey: privJwk.d || '',
+      shortId,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate Reality keys' });
   }
 });
 

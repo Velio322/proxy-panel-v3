@@ -245,6 +245,7 @@ export const inboundsApi = {
     api.post(`/inbounds/${inboundId}/port-share`, data),
   deletePortShare: (inboundId: string, psId: string) =>
     api.delete(`/inbounds/${inboundId}/port-share/${psId}`),
+  generateRealityKeys: () => api.get<{ publicKey: string; privateKey: string; shortId: string }>('/inbounds/generate-reality-keys'),
 };
 
 export const usersApi = {

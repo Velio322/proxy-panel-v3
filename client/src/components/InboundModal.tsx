@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { X, Loader2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Inbound } from '@/lib/api';
+import { Inbound, inboundsApi } from '@/lib/api';
 
 export type Protocol = 'VLESS' | 'VMESS' | 'TROJAN' | 'SHADOWSOCKS' | 'HYSTERIA2' | 'NAIVEPROXY' | 'MIERU' | 'TUIC';
 export type Security = 'none' | 'tls' | 'reality';
@@ -68,7 +68,7 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
   const [form, setForm] = useState<InboundForm>(() => inbound ? inboundToForm(inbound) : defaultForm());
   const update = useCallback((key: keyof InboundForm, value: any) => setForm((f) => ({ ...f, [key]: value })), []);
 
-  const applyPreset = useCallback((preset: Preset) => {
+  const applyPreset = useCallback(async (preset: Preset) => {
     const extraFields: Partial<InboundForm> = {};
     if (['VLESS', 'VMESS'].includes(preset.protocol)) {
       extraFields.uuid = crypto.randomUUID();
@@ -77,9 +77,14 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
       extraFields.password = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
     }
     if (preset.fields.security === 'reality') {
-      extraFields.realityPublicKey = randomHex(32);
-      extraFields.realityPrivateKey = randomHex(32);
-      extraFields.realityShortId = randomHex(8).substring(0, 16);
+      try {
+        const { data } = await inboundsApi.generateRealityKeys();
+        extraFields.realityPublicKey = data.publicKey;
+        extraFields.realityPrivateKey = data.privateKey;
+        extraFields.realityShortId = data.shortId;
+      } catch (err) {
+        console.error('Failed to generate Reality keys:', err);
+      }
     }
 
     setForm((f) => {
@@ -257,7 +262,19 @@ function TabTransport({ form, update }: { form: InboundForm; update: (k: keyof I
 function TabSecurity({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
   const [gen, setGen] = useState(false);
   if (!['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(form.protocol)) return <Empty msg={`${form.protocol} uses default security`} />;
-  const genKeys = async () => { setGen(true); await new Promise(r => setTimeout(r, 500)); update('realityPublicKey', randomHex(32)); update('realityPrivateKey', randomHex(32)); update('realityShortId', randomHex(8).substring(0, 16)); setGen(false); };
+  const genKeys = async () => {
+    setGen(true);
+    try {
+      const { data } = await inboundsApi.generateRealityKeys();
+      update('realityPublicKey', data.publicKey);
+      update('realityPrivateKey', data.privateKey);
+      update('realityShortId', data.shortId);
+    } catch (err) {
+      console.error('Failed to generate Reality keys:', err);
+    } finally {
+      setGen(false);
+    }
+  };
   return (
     <div className="space-y-4">
       <Sec title="Security Protocol"><div><Lbl>Security *</Lbl><div className="grid grid-cols-3 gap-1.5">{SECURITY_OPTIONS.map((s) => <Btn key={s.value} active={form.security === s.value} onClick={() => update('security', s.value)}><div>{s.label}</div><div className="text-[9px] opacity-60 mt-0.5">{s.desc}</div></Btn>)}</div></div></Sec>
@@ -525,7 +542,6 @@ function protocolColor(p: string): string {
   const m: Record<string, string> = { VLESS: 'bg-blue-50 text-blue-600 border-blue-200', VMESS: 'bg-cyan-50 text-cyan-600 border-cyan-200', TROJAN: 'bg-rose-50 text-rose-600 border-rose-200', HYSTERIA2: 'bg-orange-50 text-orange-600 border-orange-200', NAIVEPROXY: 'bg-emerald-50 text-emerald-600 border-emerald-200', MIERU: 'bg-indigo-50 text-indigo-600 border-indigo-200', TUIC: 'bg-pink-50 text-pink-600 border-pink-200' };
   return m[p] || 'bg-bg-raised text-fg-muted border-border';
 }
-function randomHex(n: number): string { const b = new Uint8Array(n); crypto.getRandomValues(b); return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(''); }
 function defaultForm(): InboundForm {
   return { nodeId: '', protocol: 'VLESS', tag: 'vless-inbound', port: 443, listen: '0.0.0.0', enable: true, remark: '', sniffing: true, security: 'reality', uuid: '', password: '', flow: 'xtls-rprx-vision', method: 'aes-256-gcm', alterId: 0, transport: 'tcp', sni: 'www.microsoft.com', fingerprint: 'chrome', alpn: 'h2,http/1.1', allowInsecure: false, minVersion: '1.2', maxVersion: '1.3', realityPublicKey: '', realityPrivateKey: '', realityShortId: '', realitySpiderX: '', realityDest: 'www.microsoft.com:443', realityServerNames: 'www.microsoft.com', wsPath: '/', wsHost: '', wsMaxEarlyData: 0, wsUseBrowserAgent: false, grpcServiceName: '', grpcMultiMode: false, h2Path: '/', h2Host: '', h2Method: 'PUT', httpupgradePath: '/', httpupgradeHost: '', xhttpPath: '', xhttpMode: 'auto', kcpHeaderType: 'none', kcpSeed: '', certificates: '', sniffingDestOverride: ['http', 'tls'], sniffingMetadataOnly: false, sniffingRouteOnly: false, sniffingExcludedDomains: '', sniffingExcludedIPs: '', naiveProxy: '', naiveProto: 'quic', naiveNonce: '', naivePadding: true, naivePaddingLength: 512, naivePaddingMode: 'random', mieruAuth: 'password', mieruSessionPlacement: 'random', mieruSequencePlacement: 'random', mieruBufferReadSize: 16384, mieruBufferWriteSize: 16384, hy2ObfsType: 'none', hy2ObfsPassword: '', hy2BandwidthUp: '100 mbps', hy2BandwidthDown: '100 mbps', hy2MaxClient: 16, hy2MaxStream: 1024, routingBlockTorrent: false, routingBlockAds: false, portShares: [] };
 }
