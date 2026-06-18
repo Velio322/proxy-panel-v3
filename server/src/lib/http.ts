@@ -16,7 +16,7 @@ export async function nodeRequest<T = any>(options: RequestOptions): Promise<T> 
 
   return new Promise((resolve, reject) => {
     const postData = body ? JSON.stringify(body) : undefined;
-    const isHttps = port !== 80;
+    const isHttps = port === 443;
     const client = isHttps ? https : http;
 
     const reqOptions: https.RequestOptions = {

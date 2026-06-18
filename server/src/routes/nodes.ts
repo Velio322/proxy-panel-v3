@@ -303,6 +303,11 @@ async function runLocalDeploymentWorker(nodeId: string, token: string, apiPort: 
     detached: true,
     stdio: 'ignore',
   });
+  
+  child.on('error', (err) => {
+    console.error(`[DeployWorker] Failed to spawn deployment script:`, err);
+  });
+  
   child.unref();
 }
 
