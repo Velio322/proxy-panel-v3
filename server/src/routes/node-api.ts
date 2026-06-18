@@ -4,6 +4,21 @@ import { config } from '../config';
 
 const router = Router();
 
+async function isValidNodeToken(token: string | undefined, nodeId: string | undefined): Promise<boolean> {
+  if (!token) return false;
+  if (token === config.worker.nodeSecret) return true;
+  
+  const prisma = getPrisma();
+  if (nodeId) {
+    const node = await prisma.node.findUnique({ where: { id: nodeId } });
+    if (node && node.secret === token && node.active) return true;
+  } else {
+    const node = await prisma.node.findFirst({ where: { secret: token, active: true } });
+    if (node) return true;
+  }
+  return false;
+}
+
 // ══════════════════════════════════════════════
 // POST /api/v1/nodes/self/register
 // Remote worker handshake: register node with master
@@ -14,7 +29,8 @@ router.post('/register', async (req: Request, res: Response) => {
     const { token, name, host, port, apiPort, system, nodeId } = req.body;
 
     // Validate token
-    if (!token || token !== config.worker.nodeSecret) {
+    const tokenValid = await isValidNodeToken(token, nodeId);
+    if (!tokenValid) {
       return res.status(401).json({ error: 'Invalid auth token' });
     }
 
@@ -142,12 +158,12 @@ router.post('/heartbeat', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.replace('Bearer ', '');
+    const { nodeId, status, cpuUsage, memUsage, uptime, connections } = req.body;
 
-    if (!token || token !== config.worker.nodeSecret) {
+    const tokenValid = await isValidNodeToken(token, nodeId);
+    if (!tokenValid) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-
-    const { nodeId, status, cpuUsage, memUsage, uptime, connections } = req.body;
 
     if (!nodeId) {
       return res.status(400).json({ error: 'nodeId required' });
@@ -201,11 +217,12 @@ router.post('/alert', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || token !== config.worker.nodeSecret) {
+    const { nodeId, core, type, message, stderr } = req.body;
+
+    const tokenValid = await isValidNodeToken(token, nodeId);
+    if (!tokenValid) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-
-    const { nodeId, core, type, message, stderr } = req.body;
 
     const prisma = getPrisma();
 
@@ -252,11 +269,13 @@ router.get('/config', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || token !== config.worker.nodeSecret) {
+    const nodeId = req.query.nodeId as string;
+
+    const tokenValid = await isValidNodeToken(token, nodeId);
+    if (!tokenValid) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const nodeId = req.query.nodeId as string;
     if (!nodeId) {
       return res.status(400).json({ error: 'nodeId required' });
     }
@@ -304,11 +323,13 @@ router.post('/traffic', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || token !== config.worker.nodeSecret) {
+    const { nodeId, stats } = req.body;
+
+    const tokenValid = await isValidNodeToken(token, nodeId);
+    if (!tokenValid) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { nodeId, stats } = req.body;
     if (!nodeId || !stats) {
       return res.status(400).json({ error: 'nodeId and stats required' });
     }

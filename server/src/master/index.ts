@@ -49,6 +49,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
+  validate: { trustProxy: false },
 });
 app.use(limiter);
 
@@ -57,6 +58,7 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: 'Too many login attempts' },
+  validate: { trustProxy: false },
 });
 
 // Body parser
@@ -75,6 +77,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Node-to-Master API (worker daemons poll this)
+app.use('/api/v1/nodes/self', nodeApiRoutes);
+
 // Routes
 app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/users', userRoutes);
@@ -88,9 +93,6 @@ app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/backup', backupRoutes);
 app.use('/api/v1/routing', routingRoutes);
-
-// Node-to-Master API (worker daemons poll this)
-app.use('/api/v1/nodes/self', nodeApiRoutes);
 
 // Prometheus metrics
 if (config.prometheus.enabled) {
