@@ -221,6 +221,7 @@ export const nodesApi = {
   getAll: (params?: Record<string, any>) => api.get<Node[]>('/nodes', { params }),
   getById: (id: string) => api.get<Node>(`/nodes/${id}`),
   create: (data: any) => api.post<Node>('/nodes', data),
+  createLocal: (data: any) => api.post('/nodes/local', data),
   update: (id: string, data: any) => api.put<Node>(`/nodes/${id}`, data),
   delete: (id: string) => api.delete(`/nodes/${id}`),
   check: (id: string) => api.post(`/nodes/${id}/check`),

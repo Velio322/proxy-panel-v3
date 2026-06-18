@@ -7,9 +7,10 @@ interface NodesHeaderProps {
   isFetching: boolean;
   onRefresh: () => void;
   onAdd: () => void;
+  onAddLocal?: () => void;
 }
 
-export function NodesHeader({ onlineCount, totalCount, isFetching, onRefresh, onAdd }: NodesHeaderProps) {
+export function NodesHeader({ onlineCount, totalCount, isFetching, onRefresh, onAdd, onAddLocal }: NodesHeaderProps) {
   const { t } = useI18n();
 
   return (
@@ -46,6 +47,14 @@ export function NodesHeader({ onlineCount, totalCount, isFetching, onRefresh, on
         >
           <RefreshCw size={16} />
         </button>
+        {onAddLocal && (
+          <button
+            onClick={onAddLocal}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-md shadow-emerald-900/10 transition-all active:scale-[0.98]"
+          >
+            <Plus size={16} /> {t('nodes.addLocalNode')}
+          </button>
+        )}
         <button
           onClick={onAdd}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-sm font-bold shadow-md shadow-fg-900/10 transition-all active:scale-[0.98] ring-offset-2 focus:ring-2 focus:ring-fg"

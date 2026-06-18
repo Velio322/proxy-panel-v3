@@ -51,6 +51,22 @@ export function NodesPage() {
     onError: (err: any) => alert(`Delete failed: ${err?.response?.data?.error || err.message}`),
   });
 
+  const createLocalMut = useMutation({
+    mutationFn: (data: { name: string }) => nodesApi.createLocal(data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['nodes'] });
+      alert("Локальная нода успешно создается в фоновом режиме. Она появится в списке через минуту.");
+    },
+    onError: (err: any) => alert(`Ошибка установки локальной ноды: ${err?.response?.data?.error || err.message}`),
+  });
+
+  const handleAddLocalNode = () => {
+    const name = prompt("Введите имя для локальной ноды:", "local-node");
+    if (name) {
+      createLocalMut.mutate({ name });
+    }
+  };
+
   const filtered = useMemo(() => nodes?.filter((n) => {
     if (search && !n.name.toLowerCase().includes(search.toLowerCase()) && !n.host.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter && n.status !== statusFilter) return false;
@@ -77,6 +93,7 @@ export function NodesPage() {
         isFetching={isFetching}
         onRefresh={() => qc.invalidateQueries({ queryKey: ['nodes'] })}
         onAdd={() => setShowCreate(true)}
+        onAddLocal={handleAddLocalNode}
       />
 
       <NodesFilters 
