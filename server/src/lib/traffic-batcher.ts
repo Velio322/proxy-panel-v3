@@ -97,9 +97,10 @@ export class TrafficBatcher extends EventEmitter {
    */
   async add(data: { nodeId: string; email: string; upload: bigint | number; download: bigint | number; protocol?: string; inboundTag?: string }): Promise<void> {
     try {
-      let clientId = this.emailToIdCache.get(data.email);
+      let cachedId = this.emailToIdCache.get(data.email);
+      let clientId: string;
 
-      if (!clientId) {
+      if (!cachedId) {
         const prisma = getPrisma();
         const client = await prisma.client.findFirst({
           where: {
@@ -124,6 +125,8 @@ export class TrafficBatcher extends EventEmitter {
           const firstKey = this.emailToIdCache.keys().next().value;
           if (firstKey) this.emailToIdCache.delete(firstKey);
         }
+      } else {
+        clientId = cachedId;
       }
 
       await this.accumulate([{
@@ -131,7 +134,7 @@ export class TrafficBatcher extends EventEmitter {
         nodeId: data.nodeId,
         upload: Number(data.upload),
         download: Number(data.download),
-        protocol: data.protocol,
+        protocol: data.protocol as any,
         inboundTag: data.inboundTag,
         recordAt: new Date()
       }]);

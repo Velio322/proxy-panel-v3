@@ -31,6 +31,7 @@ import { createServer } from 'http';
 import { getWorkerSocketManager } from '../ws/worker-socket';
 
 const app = express();
+app.set('trust proxy', true);
 const server = createServer(app);
 
 // Security

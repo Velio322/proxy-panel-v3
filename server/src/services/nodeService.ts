@@ -41,7 +41,7 @@ export class NodeService {
   async getAllNodeStatuses(): Promise<any[]> {
     const prisma = getPrisma();
     const nodes = await prisma.node.findMany({ where: { active: true } });
-    const statuses = await Promise.allSettled(nodes.map((n) => this.getNodeStatus(n.id)));
+    const statuses = await Promise.allSettled(nodes.map((n: any) => this.getNodeStatus(n.id)));
     return statuses.map((s, i) =>
       s.status === 'fulfilled' ? s.value : { nodeId: nodes[i].id, status: 'ERROR' }
     );
@@ -57,10 +57,10 @@ export class NodeService {
 
     try {
       const inbounds = node.inbounds
-        .filter((i) => i.enable)
-        .map((inbound) => ({
+        .filter((i: any) => i.enable)
+        .map((inbound: any) => ({
           ...inbound,
-          portShares: inbound.portShares.filter((ps) => ps.enable),
+          portShares: inbound.portShares.filter((ps: any) => ps.enable),
         }));
 
       await nodePost(node.host, node.apiPort, '/api/config', node.secret, { inbounds });

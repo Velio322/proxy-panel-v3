@@ -136,15 +136,15 @@ router.get('/top-clients', async (req: AuthRequest, res: Response) => {
       take: parseInt(limit),
     });
 
-    const clientIds = topClients.map((t) => t.clientId);
+    const clientIds = topClients.map((t: any) => t.clientId);
     const clients = await prisma.client.findMany({
       where: { id: { in: clientIds } },
       select: { id: true, username: true, uuid: true },
     });
 
-    const result = topClients.map((t) => ({
+    const result = topClients.map((t: any) => ({
       ...t,
-      client: clients.find((c) => c.id === t.clientId),
+      client: clients.find((c: any) => c.id === t.clientId),
     }));
 
     res.json(serializeBigInt(result));

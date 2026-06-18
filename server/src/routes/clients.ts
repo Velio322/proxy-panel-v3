@@ -66,7 +66,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     ]);
 
     res.json(serializeBigInt({
-      data: clients.map((c) => ({ ...c, password: undefined })),
+      data: clients.map((c: any) => ({ ...c, password: undefined })),
       total,
       page: parseInt(page),
       pages: Math.ceil(total / take),

@@ -12,7 +12,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const prisma = getPrisma();
     const settings = await prisma.systemSetting.findMany();
     const result: Record<string, any> = {};
-    settings.forEach((s) => { result[s.key] = s.value; });
+    settings.forEach((s: any) => { result[s.key] = s.value; });
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Internal server error' });

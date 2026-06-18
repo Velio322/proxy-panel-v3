@@ -1,5 +1,7 @@
 import express from 'express';
 import http from 'http';
+import https from 'https';
+import fs from 'fs';
 import os from 'os';
 import { config } from '../config';
 import path from 'path';
@@ -9,7 +11,7 @@ import { createWorkerAPI } from './api/routes';
 
 const WORKER_VERSION = '2.0.0';
 
-async function registerNode(masterUrl: string, nodeSecret: string): Promise<void> {
+async function registerNode(masterUrl: string, nodeSecret: string, cachedNodeId: string | null): Promise<string> {
   const url = `${masterUrl}/api/v1/nodes/self/register`;
   const payload = JSON.stringify({
     token: nodeSecret,
@@ -18,16 +20,18 @@ async function registerNode(masterUrl: string, nodeSecret: string): Promise<void
     port: 443,
     apiPort: config.worker.port,
     system: { release: WORKER_VERSION },
+    nodeId: cachedNodeId || undefined,
   });
 
   for (let attempt = 1; attempt <= 30; attempt++) {
     try {
-      await new Promise<void>((resolve, reject) => {
+      const nodeId = await new Promise<string>((resolve, reject) => {
         const parsed = new URL(url);
-        const req = http.request({
+        const requestModule = parsed.protocol === 'https:' ? https : http;
+        const req = requestModule.request({
           hostname: parsed.hostname,
-          port: parsed.port,
-          path: parsed.pathname,
+          port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+          path: parsed.pathname + parsed.search,
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) },
           timeout: 5000,
@@ -37,7 +41,16 @@ async function registerNode(masterUrl: string, nodeSecret: string): Promise<void
           res.on('end', () => {
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
               console.log(`[Worker] Registered with master: ${data}`);
-              resolve();
+              try {
+                const parsedData = JSON.parse(data);
+                if (parsedData.nodeId) {
+                  resolve(parsedData.nodeId);
+                } else {
+                  reject(new Error('No nodeId returned in response'));
+                }
+              } catch (e) {
+                reject(new Error('Failed to parse registration response'));
+              }
             } else {
               reject(new Error(`HTTP ${res.statusCode}: ${data}`));
             }
@@ -48,13 +61,13 @@ async function registerNode(masterUrl: string, nodeSecret: string): Promise<void
         req.write(payload);
         req.end();
       });
-      return;
+      return nodeId;
     } catch (err: any) {
       console.log(`[Worker] Register attempt ${attempt}/30 failed: ${err.message}`);
       if (attempt < 30) await new Promise((r) => setTimeout(r, 5000));
     }
   }
-  console.error('[Worker] Failed to register after 30 attempts');
+  throw new Error('[Worker] Failed to register after 30 attempts');
 }
 
 async function main() {
@@ -101,12 +114,42 @@ async function main() {
 
   // Connect to master if configured
   if (config.worker.masterUrl) {
-    // Register node with master before connecting WebSocket
-    await registerNode(config.worker.masterUrl, config.worker.nodeSecret);
+    // 1. Try to load cached nodeId
+    const nodeIdPath = path.join(config.worker.configDir, 'node.id');
+    let cachedNodeId: string | null = null;
+    try {
+      if (fs.existsSync(nodeIdPath)) {
+        cachedNodeId = fs.readFileSync(nodeIdPath, 'utf8').trim();
+        console.log(`[Worker] Loaded cached nodeId: ${cachedNodeId}`);
+      }
+    } catch (err: any) {
+      console.warn(`[Worker] Failed to read cached nodeId: ${err.message}`);
+    }
+
+    // 2. Register node with master before connecting WebSocket
+    let nodeId: string;
+    try {
+      nodeId = await registerNode(config.worker.masterUrl, config.worker.nodeSecret, cachedNodeId);
+      
+      // Save/update cached nodeId
+      if (nodeId !== cachedNodeId) {
+        try {
+          fs.mkdirSync(config.worker.configDir, { recursive: true });
+          fs.writeFileSync(nodeIdPath, nodeId, 'utf8');
+          console.log(`[Worker] Saved nodeId to cache: ${nodeId}`);
+        } catch (err: any) {
+          console.warn(`[Worker] Failed to save nodeId to cache: ${err.message}`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[Worker] Fatal: Registration failed. ${err.message}`);
+      process.exit(1);
+    }
 
     masterClient = new MasterClient({
       masterUrl: config.worker.masterUrl,
       nodeSecret: config.worker.nodeSecret,
+      nodeId,
       pollInterval: 30000, // 30 seconds for status report
       onConfigUpdate: (inbounds) => {
         console.log(`[Worker] Received config update via WS: ${inbounds.length} inbounds`);

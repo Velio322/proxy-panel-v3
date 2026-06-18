@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 interface MasterClientConfig {
   masterUrl: string;
   nodeSecret: string;
+  nodeId: string;
   pollInterval: number; // Kept for compatibility but not used for polling configs
   onConfigUpdate: (inbounds: InboundConfig[]) => void;
   onStatusReport: (status: any) => void;
@@ -40,7 +41,7 @@ export class MasterClient {
     }
 
     // Convert http/https to ws/wss
-    const wsUrl = this.config.masterUrl.replace(/^http/, 'ws') + '/ws/worker';
+    const wsUrl = this.config.masterUrl.replace(/^http/, 'ws') + `/ws/worker?nodeId=${encodeURIComponent(this.config.nodeId)}`;
 
     console.log(`[MasterClient] Connecting to Master WebSocket: ${wsUrl}`);
 
@@ -48,6 +49,7 @@ export class MasterClient {
       headers: {
         'Authorization': `Bearer ${this.config.nodeSecret}`,
         'X-Node-Secret': this.config.nodeSecret,
+        'X-Node-Id': this.config.nodeId,
       },
       rejectUnauthorized: false,
     });

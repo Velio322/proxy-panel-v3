@@ -43,14 +43,33 @@ export class WorkerSocketManager {
         return;
       }
 
+      // Parse nodeId from headers or query params
+      const nodeIdHeader = req.headers['x-node-id'];
+      let nodeId: string | null = typeof nodeIdHeader === 'string' ? nodeIdHeader : null;
+      if (!nodeId && req.url) {
+        try {
+          const urlObj = new URL(req.url, 'http://localhost');
+          nodeId = urlObj.searchParams.get('nodeId');
+        } catch (e) {
+          // ignore
+        }
+      }
+
       const prisma = getPrisma();
-      const node = await prisma.node.findFirst({
-        where: { secret: String(nodeSecret), active: true }
-      });
+      let node;
+      if (nodeId) {
+        node = await prisma.node.findFirst({
+          where: { id: nodeId, secret: String(nodeSecret), active: true }
+        });
+      } else {
+        node = await prisma.node.findFirst({
+          where: { secret: String(nodeSecret), active: true }
+        });
+      }
 
       if (!node) {
-        console.log('[WS] Rejected: Invalid secret');
-        ws.close(4001, 'Invalid node secret');
+        console.log(`[WS] Rejected: Invalid secret or nodeId (${nodeId || 'none'})`);
+        ws.close(4001, 'Invalid node secret or ID');
         return;
       }
 
@@ -185,7 +204,7 @@ export class WorkerSocketManager {
 
       // Prepare optimized payload
       const payload = {
-        inbounds: inbounds.map(i => ({
+        inbounds: inbounds.map((i: any) => ({
           ...i,
           // Ensure BigInts (if any) are converted or stripped if not needed
         })),

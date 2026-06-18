@@ -153,12 +153,12 @@ export class TelegramBotService {
 
     // Mark as offline
     await this.prisma.node.updateMany({
-      where: { id: { in: offlineNodes.map((n) => n.id) } },
+      where: { id: { in: offlineNodes.map((n: any) => n.id) } },
       data: { status: 'OFFLINE' },
     });
 
     // Send alert
-    const nodeList = offlineNodes.map((n) => `• ${n.name} (${n.host})`).join('\n');
+    const nodeList = offlineNodes.map((n: any) => `• ${n.name} (${n.host})`).join('\n');
     const message = `🔴 <b>Node Offline Alert</b>\n\n${offlineNodes.length} node(s) are offline:\n${nodeList}\n\nPlease check the nodes immediately.`;
 
     await this.sendAdminAlert(message);

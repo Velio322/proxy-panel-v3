@@ -511,14 +511,14 @@ case "$INSTALL_MODE" in
                 -H 'Content-Type: application/json' \
                 -d "{\"token\":\"${RPC_SECRET}\",\"name\":\"local-node\",\"host\":\"127.0.0.1\",\"port\":443,\"apiPort\":2087}" 2>/dev/null)
             if echo "$RESP" | grep -q '"nodeId"'; then
-                NODE_ID=$(echo "$RESP" | grep -oP '"nodeId":"\K[^"]+' 2>/dev/null || echo "unknown")
+                NODE_ID=$(echo "$RESP" | sed -n 's/.*"nodeId":"\([^"]*\)".*/\1/p' 2>/dev/null || echo "unknown")
                 log "Local node registered in panel (id: ${NODE_ID:-unknown})"
                 REGISTERED=true
                 break
             fi
             # Show why it failed on last attempt
             if [ "$i" -eq 20 ]; then
-                ERRMSG=$(echo "$RESP" | grep -oP '"error":"\K[^"]+' 2>/dev/null || echo "unknown error")
+                ERRMSG=$(echo "$RESP" | sed -n 's/.*"error":"\([^"]*\)".*/\1/p' 2>/dev/null || echo "unknown error")
                 warn "Node auto-registration failed: ${ERRMSG:-no response from server}"
                 warn "The worker will register itself automatically on first heartbeat."
             fi

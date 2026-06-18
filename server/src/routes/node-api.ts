@@ -11,24 +11,57 @@ const router = Router();
 
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { token, name, host, port, apiPort, system } = req.body;
+    const { token, name, host, port, apiPort, system, nodeId } = req.body;
 
     // Validate token
     if (!token || token !== config.worker.nodeSecret) {
       return res.status(401).json({ error: 'Invalid auth token' });
     }
 
+    let detectedHost = host;
+    if (!detectedHost || detectedHost === '0.0.0.0' || detectedHost === '127.0.0.1') {
+      detectedHost = req.ip;
+    }
+
+    const isLocalIp = (ip: string) => {
+      return !ip || ip === '127.0.0.1' || ip === '::1' || 
+             ip.startsWith('172.') || ip.startsWith('192.168.') || 
+             ip.startsWith('10.') || ip.startsWith('::ffff:127.') || 
+             ip.startsWith('::ffff:172.') || ip.startsWith('::ffff:192.168.') || 
+             ip.startsWith('::ffff:10.');
+    };
+
+    if (isLocalIp(detectedHost)) {
+      try {
+        const parsedApi = new URL(config.master.apiUrl);
+        if (parsedApi.hostname && parsedApi.hostname !== 'localhost' && parsedApi.hostname !== '127.0.0.1') {
+          detectedHost = parsedApi.hostname;
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+
     const prisma = getPrisma();
 
-    // Check if node already registered by name or host
-    const existing = await prisma.node.findFirst({
-      where: {
-        OR: [
-          { name: name || '' },
-          { host: host || req.ip },
-        ],
-      },
-    });
+    // Check if node already registered by id, name or host
+    let existing = null;
+    if (nodeId) {
+      existing = await prisma.node.findUnique({
+        where: { id: nodeId },
+      });
+    }
+
+    if (!existing) {
+      existing = await prisma.node.findFirst({
+        where: {
+          OR: [
+            { name: name || '' },
+            { host: detectedHost || '' },
+          ],
+        },
+      });
+    }
 
     if (existing) {
       // Update existing node
@@ -36,7 +69,7 @@ router.post('/register', async (req: Request, res: Response) => {
         where: { id: existing.id },
         data: {
           name: name || existing.name,
-          host: host || req.ip,
+          host: detectedHost || existing.host,
           port: port || existing.port,
           apiPort: apiPort || existing.apiPort,
           status: 'ONLINE',
@@ -57,7 +90,7 @@ router.post('/register', async (req: Request, res: Response) => {
     const node = await prisma.node.create({
       data: {
         name: name || `node-${Date.now()}`,
-        host: host || req.ip || '0.0.0.0',
+        host: detectedHost || '0.0.0.0',
         port: port || 443,
         apiPort: apiPort || 2087,
         secret: token,
@@ -71,7 +104,7 @@ router.post('/register', async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`[Handshake] New node registered: "${node.name}" (${node.id}) from ${host || req.ip}`);
+    console.log(`[Handshake] New node registered: "${node.name}" (${node.id}) from ${detectedHost}`);
 
     // Log audit event
     await prisma.auditLog.create({
@@ -240,7 +273,7 @@ router.get('/config', async (req: Request, res: Response) => {
     res.json(serializeBigInt({
       nodeId,
       nodeName: node?.name,
-      inbounds: inbounds.map((inb) => ({
+      inbounds: inbounds.map((inb: any) => ({
         id: inb.id,
         protocol: inb.protocol,
         tag: inb.tag,
