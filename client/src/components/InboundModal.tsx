@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Loader2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Inbound } from '@/lib/api';
 
@@ -67,6 +67,41 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<InboundForm>(() => inbound ? inboundToForm(inbound) : defaultForm());
   const update = useCallback((key: keyof InboundForm, value: any) => setForm((f) => ({ ...f, [key]: value })), []);
+
+  const applyPreset = useCallback((preset: Preset) => {
+    const extraFields: Partial<InboundForm> = {};
+    if (['VLESS', 'VMESS'].includes(preset.protocol)) {
+      extraFields.uuid = crypto.randomUUID();
+    }
+    if (['TROJAN', 'SHADOWSOCKS', 'HYSTERIA2', 'NAIVEPROXY', 'MIERU', 'TUIC'].includes(preset.protocol)) {
+      extraFields.password = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+    }
+    if (preset.fields.security === 'reality') {
+      extraFields.realityPublicKey = randomHex(32);
+      extraFields.realityPrivateKey = randomHex(32);
+      extraFields.realityShortId = randomHex(8).substring(0, 16);
+    }
+
+    setForm((f) => {
+      const cleanForm = defaultForm();
+      cleanForm.nodeId = f.nodeId;
+      if (f.id) {
+        cleanForm.id = f.id;
+        cleanForm.tag = f.tag;
+      } else {
+        const transportSuffix = preset.fields.transport ? `-${preset.fields.transport}` : '';
+        const securitySuffix = preset.fields.security && preset.fields.security !== 'none' ? `-${preset.fields.security}` : '';
+        cleanForm.tag = `${preset.protocol.toLowerCase()}${transportSuffix}${securitySuffix}`;
+      }
+      return {
+        ...cleanForm,
+        protocol: preset.protocol,
+        ...preset.fields,
+        ...extraFields,
+      };
+    });
+  }, []);
+
   const handleSave = async () => { setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
   const ti = TABS.findIndex((t) => t.key === tab);
 
@@ -87,7 +122,7 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
             <span style={{ color: 'var(--fg-subtle)', marginRight: 4 }}>{i + 1}.</span>{t.label}</button>)}
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
-          {tab === 'general' && <TabGeneral form={form} update={update} nodes={nodes} />}
+          {tab === 'general' && <TabGeneral form={form} update={update} nodes={nodes} applyPreset={applyPreset} />}
           {tab === 'transport' && <TabTransport form={form} update={update} />}
           {tab === 'security' && <TabSecurity form={form} update={update} />}
           {tab === 'sniffing' && <TabSniffing form={form} update={update} />}
@@ -112,9 +147,64 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
 }
 
 // ── Tab: General ──
-function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void; nodes: any[] }) {
+function TabGeneral({ form, update, nodes, applyPreset }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void; nodes: any[]; applyPreset: (preset: Preset) => void }) {
+  const [showPresets, setShowPresets] = useState(false);
+
   return (
     <div className="space-y-4">
+      <Sec title="Quick Setup Presets">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowPresets(!showPresets)}
+            className="w-full flex items-center justify-between px-3.5 py-2 rounded text-[13px] font-medium transition-colors border"
+            style={{
+              background: 'var(--accent-muted)',
+              color: 'var(--accent)',
+              borderColor: 'var(--accent)'
+            }}
+          >
+            <span className="flex items-center gap-2">
+              <span>✨ Choose a Preset Configuration...</span>
+            </span>
+            <ChevronDown size={14} className={cn("transition-transform duration-200", showPresets && "rotate-180")} />
+          </button>
+          
+          {showPresets && (
+            <div
+              className="absolute left-0 right-0 z-10 mt-1 rounded border shadow-lg max-h-60 overflow-y-auto"
+              style={{
+                background: S.bg,
+                borderColor: S.border
+              }}
+            >
+              <div className="p-1 space-y-0.5">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.name}
+                    type="button"
+                    onClick={() => {
+                      applyPreset(p);
+                      setShowPresets(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-[var(--bg-raised)] transition-colors flex flex-col gap-0.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-xs text-[var(--fg)]">{p.name}</span>
+                      <span className={cn("px-1.5 py-0.2 rounded text-[8px] font-semibold border uppercase", protocolColor(p.protocol))}>
+                        {p.protocol}
+                      </span>
+                    </div>
+                    {p.description && (
+                      <span className="text-[10px] text-[var(--fg-muted)] line-clamp-1">{p.description}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Sec>
       <Sec title="Target">
         <div><Lbl>Node *</Lbl><Sel value={form.nodeId} onChange={(v) => update('nodeId', v)} opts={[['', 'Select node...'], ...nodes.map((n) => [n.id, `${n.name} (${n.host}) — ${n.status}`] as [string, string])]} /></div>
       </Sec>
@@ -292,6 +382,143 @@ const TLS_VERSIONS = ['1.0', '1.1', '1.2', '1.3'];
 const SS_METHODS = ['aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305', '2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305'];
 const KCP_HEADERS = ['none', 'srtp', 'utp', 'wechat-video', 'dtls', 'wireguard'];
 const SNIFFING_DESTS = ['http', 'tls', 'quic', 'stun', 'dns', 'bittorrent'];
+
+export interface Preset {
+  name: string;
+  description: string;
+  protocol: Protocol;
+  fields: Partial<InboundForm>;
+}
+
+const PRESETS: Preset[] = [
+  {
+    name: 'VLESS + Reality + TCP (Vision)',
+    description: 'Recommended VLESS config. High performance, secure, anti-DPI. Port 443.',
+    protocol: 'VLESS',
+    fields: {
+      port: 443,
+      security: 'reality',
+      flow: 'xtls-rprx-vision',
+      transport: 'tcp',
+      sni: 'www.microsoft.com',
+      realityDest: 'www.microsoft.com:443',
+      realityServerNames: 'www.microsoft.com',
+      fingerprint: 'chrome',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'VLESS + Reality + gRPC',
+    description: 'Alternative VLESS config using gRPC transport. Useful for bypass / CDN setup. Port 443.',
+    protocol: 'VLESS',
+    fields: {
+      port: 443,
+      security: 'reality',
+      flow: '',
+      transport: 'grpc',
+      grpcServiceName: 'grpc-reality',
+      sni: 'www.microsoft.com',
+      realityDest: 'www.microsoft.com:443',
+      realityServerNames: 'www.microsoft.com',
+      fingerprint: 'chrome',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'VLESS + WebSocket + TLS',
+    description: 'VLESS over WebSocket with standard TLS encryption. Great for hosting behind CDN (Cloudflare). Port 443.',
+    protocol: 'VLESS',
+    fields: {
+      port: 443,
+      security: 'tls',
+      flow: '',
+      transport: 'ws',
+      wsPath: '/graphql',
+      sni: 'yourdomain.com',
+      fingerprint: 'chrome',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'VLESS + TCP + TLS',
+    description: 'Standard VLESS over TCP with standard TLS encryption. Needs a real domain & certificate. Port 443.',
+    protocol: 'VLESS',
+    fields: {
+      port: 443,
+      security: 'tls',
+      flow: '',
+      transport: 'tcp',
+      sni: 'yourdomain.com',
+      fingerprint: 'chrome',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'VMess + WebSocket + TLS',
+    description: 'Classic VMess config behind CDN (Cloudflare) with WebSocket and TLS. Port 443.',
+    protocol: 'VMESS',
+    fields: {
+      port: 443,
+      security: 'tls',
+      transport: 'ws',
+      wsPath: '/vmess-ws',
+      sni: 'yourdomain.com',
+      fingerprint: 'chrome',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'VMess + gRPC + TLS',
+    description: 'VMess config behind CDN using gRPC transport with TLS. Port 443.',
+    protocol: 'VMESS',
+    fields: {
+      port: 443,
+      security: 'tls',
+      transport: 'grpc',
+      grpcServiceName: 'vmess-grpc',
+      sni: 'yourdomain.com',
+      fingerprint: 'chrome',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'Trojan + TCP + TLS',
+    description: 'Classic Trojan protocol over TCP with TLS. Secure, standard. Port 443.',
+    protocol: 'TROJAN',
+    fields: {
+      port: 443,
+      security: 'tls',
+      transport: 'tcp',
+      sni: 'yourdomain.com',
+      sniffing: true,
+      sniffingDestOverride: ['http', 'tls'],
+    }
+  },
+  {
+    name: 'Hysteria 2',
+    description: 'Hysteria 2 protocol based on custom UDP/QUIC. High speed, bypasses congestion. Port 443 UDP.',
+    protocol: 'HYSTERIA2',
+    fields: {
+      port: 443,
+      sni: 'yourdomain.com',
+    }
+  },
+  {
+    name: 'Shadowsocks (2022-blake3-aes-128-gcm)',
+    description: 'Shadowsocks using the modern 2022 standard. High performance and security.',
+    protocol: 'SHADOWSOCKS',
+    fields: {
+      port: 8388,
+      method: '2022-blake3-aes-128-gcm',
+    }
+  }
+];
 
 // ── Helpers ──
 function protocolColor(p: string): string {
