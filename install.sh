@@ -492,20 +492,41 @@ case "$INSTALL_MODE" in
         # FIX #8 (cont): RPC_SECRET is now a global var set by install_panel
         [[ -z "$RPC_SECRET" ]] && fail "Internal error: RPC_SECRET not set after panel install"
         install_node "http://127.0.0.1:3000" "$RPC_SECRET"
-        step "NODE" "Registering node in panel database..."
-        for i in $(seq 1 30); do
-            RESP=$(curl -sf -X POST "http://127.0.0.1:3000/api/v1/nodes/self/register" \
+
+        step "NODE" "Registering local node in panel database..."
+        # Wait up to 60s for the panel API to become available before attempting registration
+        echo -e "  Waiting for panel API to be ready..."
+        for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:3000/api/health &>/dev/null; then
+                break
+            fi
+            sleep 3
+            echo -ne "\r  Waiting... $((i*3))s / 60s"
+        done
+        echo ""
+
+        REGISTERED=false
+        for i in $(seq 1 20); do
+            RESP=$(curl -s -X POST "http://127.0.0.1:3000/api/v1/nodes/self/register" \
                 -H 'Content-Type: application/json' \
                 -d "{\"token\":\"${RPC_SECRET}\",\"name\":\"local-node\",\"host\":\"127.0.0.1\",\"port\":443,\"apiPort\":2087}" 2>/dev/null)
             if echo "$RESP" | grep -q '"nodeId"'; then
-                log "Node registered in panel database"
+                NODE_ID=$(echo "$RESP" | grep -o '"nodeId":"[^"]*"' | cut -d'"\'"' -f4)
+                log "Local node registered in panel (id: ${NODE_ID:-unknown})"
+                REGISTERED=true
                 break
             fi
-            if [ "$i" -eq 30 ]; then
-                warn "Node auto-registration timed out. The worker will register itself on first connection."
+            # Show why it failed on last attempt
+            if [ "$i" -eq 20 ]; then
+                ERRMSG=$(echo "$RESP" | grep -o '"error":"[^"]*"' | cut -d'"\'"' -f4)
+                warn "Node auto-registration failed: ${ERRMSG:-no response from server}"
+                warn "The worker will register itself automatically on first heartbeat."
             fi
-            sleep 2
+            sleep 3
         done
+        if [[ "$REGISTERED" == "false" ]]; then
+            echo -e "  ${YELLOW}Tip: Check logs with: docker compose -f /opt/proxpanel/docker-compose.yml logs server${NC}"
+        fi
         ;;
 esac
 
