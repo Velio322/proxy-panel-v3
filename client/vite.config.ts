@@ -9,6 +9,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    target: 'es2020',
+    minify: 'esbuild',
+    sourcemap: false,
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     port: 5173,
     host: '0.0.0.0',

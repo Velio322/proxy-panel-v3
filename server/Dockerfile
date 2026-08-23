@@ -8,7 +8,7 @@ WORKDIR /app
 
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --prefer-offline
 RUN npx prisma generate
 
 COPY . .
