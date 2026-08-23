@@ -722,23 +722,27 @@ install_node() {
 
     # ──── Download and Build Worker ────
     step "NODE 2/6" "Preparing worker source code..."
-    rm -rf "$CLONE_DIR"
-    mkdir -p "$CLONE_DIR"
-    if ! curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" | \
-         tar xz -C "$CLONE_DIR" --strip-components=1; then
-        fail "Failed to download source archive"
-    fi
-
     mkdir -p "$NODE_DIR"
-    cp -r "$CLONE_DIR/server" "$NODE_DIR/"
-    rm -rf "$CLONE_DIR"
+    if [[ -d "${PANEL_DIR}/server" ]]; then
+        cp -r "${PANEL_DIR}/server" "$NODE_DIR/"
+    else
+        rm -rf "$CLONE_DIR"
+        mkdir -p "$CLONE_DIR"
+        if ! curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" | \
+             tar xz -C "$CLONE_DIR" --strip-components=1; then
+            fail "Failed to download source archive"
+        fi
+        cp -r "$CLONE_DIR/server" "$NODE_DIR/"
+        rm -rf "$CLONE_DIR"
+    fi
+    log "Worker source code ready"
 
     step "NODE 3/6" "Installing dependencies and compiling TypeScript worker..."
     cd "$NODE_DIR/server"
-    npm install --no-workspaces 2>&1 | tail -3
+    npm ci --prefer-offline --no-audit --no-fund 2>&1 | tail -3
     npx prisma generate 2>&1 | tail -1
     npm run build 2>&1 | tail -3
-    log "Worker compiled"
+    log "Worker compiled and ready"
 
     # ──── Create Environment File ────
     cat > "$NODE_DIR/server/.env" <<EOF
