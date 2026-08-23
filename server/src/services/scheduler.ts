@@ -20,17 +20,26 @@ export function startScheduler() {
       const prisma = getPrisma();
       const now = new Date();
 
-      // Ban expired clients
-      const expired = await prisma.client.updateMany({
+      // Find expired clients
+      const expiredClients = await prisma.client.findMany({
         where: {
-          expireAt: { lt: now },
+          expireAt: { not: null, lt: now },
           banned: false,
         },
-        data: { banned: true },
+        select: { id: true, subToken: true },
       });
 
-      if (expired.count > 0) {
-        console.log(`[Scheduler] Banned ${expired.count} expired clients`);
+      if (expiredClients.length > 0) {
+        await prisma.client.updateMany({
+          where: { id: { in: expiredClients.map((c) => c.id) } },
+          data: { banned: true },
+        });
+
+        const { cacheInvalidatePattern } = await import('../lib/redis');
+        for (const c of expiredClients) {
+          await cacheInvalidatePattern(`sub:${c.subToken}*`);
+        }
+        console.log(`[Scheduler] Banned ${expiredClients.length} expired clients`);
       }
     } catch (error) {
       console.error('[Scheduler] Expiry check failed:', error);

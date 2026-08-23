@@ -1,146 +1,427 @@
 #!/usr/bin/env bash
 
 # ══════════════════════════════════════════════════════════════
-# ProxPanel v3 Installer
+# ProxPanel v3 — Fast, Resilient & Fail-Safe Installer
 # ══════════════════════════════════════════════════════════════
 # One-liner:
 #   bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh)
+#
+# Non-interactive usage:
+#   sudo bash install.sh -m both -d panel.example.com -e admin@example.com -u admin -p Pass12345 -y
 # ══════════════════════════════════════════════════════════════
 
 set -euo pipefail
+
+# ──── Ensure stdin is connected to terminal when running via curl | bash ────
+if [[ -c /dev/tty ]]; then
+    exec < /dev/tty
+fi
 
 REPO="Velio322/proxy-panel-v3"
 BRANCH="main"
 PANEL_DIR="/opt/proxpanel"
 NODE_DIR="/opt/proxpanel-node"
-CLONE_DIR="/tmp/proxpanel-src"
+CONFIG_DIR="/etc/proxpanel"
+CLONE_DIR="/tmp/proxpanel-src-$$"
 NODE_SERVICE="proxpanel-node"
 
-# FIX #1: RPC_SECRET must be declared at global scope so 'both' mode can pass it to install_node
-RPC_SECRET=""
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
 
 log()  { echo -e "${GREEN}  ✓${NC} $1"; }
 warn() { echo -e "${YELLOW}  !${NC} $1"; }
-fail() { echo -e "${RED}  ✗ $1${NC}"; exit 1; }
+fail() { echo -e "\n${RED}  ✗ FATAL: $1${NC}\n"; exit 1; }
 step() { echo -e "\n${CYAN}${BOLD}[$1]${NC} ${BOLD}$2${NC}"; }
 
-generate_secret() { openssl rand -hex 32; }
+# ──── Robust Error Trap Handler ────
+on_error() {
+    local exit_code=$1
+    local line_no=$2
+    local last_cmd=$3
+    if [[ "$exit_code" -ne 0 ]]; then
+        echo -e "\n${RED}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}${BOLD}║              INSTALLATION ENCOUNTERED AN ERROR             ║${NC}"
+        echo -e "${RED}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}"
+        echo -e "  ${RED}✗ Failed at line ${line_no} with exit code ${exit_code}${NC}"
+        echo -e "  ${YELLOW}Command: ${last_cmd}${NC}\n"
+        echo -e "  ${BOLD}Troubleshooting steps:${NC}"
+        echo -e "    1. Inspect Docker logs:  ${CYAN}docker compose -f /opt/proxpanel/docker-compose.yml logs${NC}"
+        echo -e "    2. Inspect Worker logs:  ${CYAN}journalctl -u proxpanel-node -n 50 --no-pager${NC}"
+        echo -e "    3. Run diagnostics:      ${CYAN}vpnpanel doctor${NC} or ${CYAN}bash /opt/proxpanel/scripts/check.sh${NC}"
+        echo -e "    4. Re-run installer:     ${CYAN}sudo bash install.sh${NC}\n"
+        rm -rf "$CLONE_DIR" 2>/dev/null || true
+    fi
+}
+trap 'on_error $? $LINENO "$BASH_COMMAND"' ERR
+
+generate_secret() { openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 64; }
+
+safe_read() {
+    local prompt="$1"
+    local var_name="$2"
+    local is_secret="${3:-false}"
+    local val=""
+
+    if [[ "$is_secret" == "true" ]]; then
+        if [[ -c /dev/tty ]]; then
+            read -rsp "$prompt" val < /dev/tty || true
+        else
+            read -rsp "$prompt" val || true
+        fi
+        echo ""
+    else
+        if [[ -c /dev/tty ]]; then
+            read -rp "$prompt" val < /dev/tty || true
+        else
+            read -rp "$prompt" val || true
+        fi
+    fi
+    eval "$var_name=\"\$val\""
+}
+
+# ──── CLI Argument Parsing ────
+CLI_MODE=""
+CLI_DOMAIN=""
+CLI_EMAIL=""
+CLI_USER=""
+CLI_PASS=""
+CLI_SECRET=""
+CLI_MASTER_URL=""
+CLI_NON_INTERACTIVE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -m|--mode)       CLI_MODE="$2"; shift 2 ;;
+        -d|--domain)     CLI_DOMAIN="$2"; shift 2 ;;
+        -e|--email)      CLI_EMAIL="$2"; shift 2 ;;
+        -u|--user)       CLI_USER="$2"; shift 2 ;;
+        -p|--pass)       CLI_PASS="$2"; shift 2 ;;
+        -s|--secret)     CLI_SECRET="$2"; shift 2 ;;
+        --master-url)    CLI_MASTER_URL="$2"; shift 2 ;;
+        -y|--yes)        CLI_NON_INTERACTIVE=true; shift ;;
+        *) shift ;;
+    esac
+done
 
 # ──── Root check ────
-
-[[ $EUID -ne 0 ]] && fail "Run as root: sudo bash <(curl -Ls URL)"
+[[ $EUID -ne 0 ]] && fail "Please run this installer as root: sudo bash install.sh"
 
 # ──── OS check ────
-
-# FIX #2: Verify supported OS before proceeding
 if ! command -v apt-get &>/dev/null; then
     fail "This installer requires a Debian/Ubuntu-based system (apt-get not found)"
 fi
 
-# ──── Banner ────
+# ──── Architecture Mapping ────
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64|amd64)
+        ARCH_XRAY="64"
+        ARCH_SING="amd64"
+        ARCH_MIERU="amd64"
+        ARCH_DEB="amd64"
+        ;;
+    aarch64|arm64)
+        ARCH_XRAY="arm64-v8a"
+        ARCH_SING="arm64"
+        ARCH_MIERU="arm64"
+        ARCH_DEB="arm64"
+        ;;
+    *)
+        fail "Unsupported CPU architecture: $ARCH (ProxPanel requires amd64 or arm64)"
+        ;;
+esac
 
-echo -e "\n${CYAN}${BOLD}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║           ProxPanel v3 Installer               ║${NC}"
-echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════╝${NC}\n"
+# ──── Banner ────
+echo -e "\n${CYAN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║           ProxPanel v3 Fast & Resilient Installer          ║${NC}"
+echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}\n"
+echo -e "  Detected Arch:  ${BOLD}${ARCH} (${ARCH_DEB})${NC}"
+echo -e "  Target OS:      ${BOLD}Ubuntu 20.04+ / Debian 11+${NC}\n"
 
 # ──── Mode selection ────
+INSTALL_MODE="$CLI_MODE"
+if [[ -z "$INSTALL_MODE" ]]; then
+    echo -e "  ${BOLD}Select installation mode:${NC}\n"
+    echo -e "    ${CYAN}1${NC}) Panel only    — Web Dashboard + PostgreSQL + Redis + Caddy (Docker)"
+    echo -e "    ${CYAN}2${NC}) Node only     — Proxy Worker daemon for remote VPS (systemd)"
+    echo -e "    ${CYAN}3${NC}) Panel + Node  — All-in-one Master Panel & Local Proxy Node (Recommended)\n"
 
-echo -e "  ${BOLD}Select installation mode:${NC}\n"
-echo -e "    ${CYAN}1${NC}) Panel only  — web dashboard + database (Docker)"
-echo -e "    ${CYAN}2${NC}) Node only   — proxy worker on this server (systemd)"
-echo -e "    ${CYAN}3${NC}) Panel + Node — all-in-one server\n"
+    while true; do
+        safe_read "  Enter choice [1-3]: " MODE_CHOICE
+        case "$MODE_CHOICE" in
+            1) INSTALL_MODE="panel"; break ;;
+            2) INSTALL_MODE="node";  break ;;
+            3) INSTALL_MODE="both";  break ;;
+            *) echo -e "  ${RED}Invalid choice. Please enter 1, 2, or 3.${NC}" ;;
+        esac
+    done
+fi
 
-# FIX #3: Loop until valid input instead of single read
-while true; do
-    read -rp "  Enter choice [1-3]: " MODE
-    case "$MODE" in
-        1) INSTALL_MODE="panel"; break ;;
-        2) INSTALL_MODE="node";  break ;;
-        3) INSTALL_MODE="both";  break ;;
-        *) echo -e "  ${RED}Invalid choice. Please enter 1, 2, or 3.${NC}" ;;
-    esac
-done
+RPC_SECRET="$CLI_SECRET"
 
 # ══════════════════════════════════════════════════════════════
-# PANEL INSTALL
+# SYSTEM OPTIMIZATION (SYSCTL & BBR & LIMITS & FIREWALL)
+# ══════════════════════════════════════════════════════════════
+
+apply_system_tuning() {
+    step "SYS 1/2" "Applying Linux kernel BBR and 64MB TCP buffer optimization..."
+
+    # Enable BBR kernel module
+    modprobe tcp_bbr 2>/dev/null || true
+    echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null || true
+
+    # Sysctl optimization
+    cat > /etc/sysctl.d/99-proxpanel.conf <<'EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.forwarding = 1
+net.ipv6.conf.all.forwarding = 1
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 100000
+net.ipv4.tcp_max_syn_backlog = 65535
+fs.file-max = 2097152
+net.core.rmem_max = 67108864
+net.core.wmem_max = 67108864
+net.core.rmem_default = 1048576
+net.core.wmem_default = 1048576
+net.ipv4.tcp_rmem = 4096 87380 67108864
+net.ipv4.tcp_wmem = 4096 65536 67108864
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_keepalive_time = 300
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_max_tw_buckets = 1440000
+vm.swappiness = 10
+EOF
+
+    sysctl -p /etc/sysctl.d/99-proxpanel.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
+    log "Kernel parameters and BBR applied"
+
+    # Security limits
+    cat > /etc/security/limits.d/99-proxpanel.conf <<'EOF'
+*          soft    nofile          1048576
+*          hard    nofile          1048576
+*          soft    nproc           524288
+*          hard    nproc           524288
+root       soft    nofile          1048576
+root       hard    nofile          1048576
+root       soft    nproc           524288
+root       hard    nproc           524288
+EOF
+    log "Security limits (nofile = 1048576) configured"
+}
+
+configure_firewall() {
+    step "SYS 2/2" "Configuring firewall rules safely..."
+    if command -v ufw &>/dev/null; then
+        # Detect active SSH port to avoid lockout
+        local SSH_PORT="22"
+        if [[ -f /etc/ssh/sshd_config ]]; then
+            local CONF_PORT
+            CONF_PORT=$(grep -E "^Port\s+[0-9]+" /etc/ssh/sshd_config | awk '{print $2}' | head -1 || echo "")
+            [[ -n "$CONF_PORT" ]] && SSH_PORT="$CONF_PORT"
+        fi
+
+        ufw allow "${SSH_PORT}/tcp" >/dev/null 2>&1 || true
+        ufw allow 80/tcp   >/dev/null 2>&1 || true
+        ufw allow 443/tcp  >/dev/null 2>&1 || true
+        ufw allow 443/udp  >/dev/null 2>&1 || true
+        ufw allow 2087/tcp >/dev/null 2>&1 || true
+        echo "y" | ufw enable >/dev/null 2>&1 || true
+        log "UFW Firewall configured (SSH: ${SSH_PORT}, 80, 443 TCP/UDP, 2087)"
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════
+# PARALLEL CORE BINARY FETCHER
+# ══════════════════════════════════════════════════════════════
+
+download_proxy_cores() {
+    step "CORES" "Downloading proxy core binaries in parallel..."
+    mkdir -p /usr/local/bin "$CONFIG_DIR"
+    local TMP_DIR="/tmp/proxpanel-bins-$$"
+    mkdir -p "$TMP_DIR"
+
+    # 1. Download Xray (background)
+    (
+        local XRAY_TAG
+        XRAY_TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || echo "v25.1.30")
+        [[ -z "$XRAY_TAG" || "$XRAY_TAG" == "null" ]] && XRAY_TAG="v25.1.30"
+        local XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_TAG}/Xray-linux-${ARCH_XRAY}.zip"
+        if wget -qO "${TMP_DIR}/xray.zip" "$XRAY_URL"; then
+            unzip -qo "${TMP_DIR}/xray.zip" xray -d "${TMP_DIR}/" && \
+            mv "${TMP_DIR}/xray" /usr/local/bin/xray && \
+            chmod +x /usr/local/bin/xray
+            echo "[DONE] Xray"
+        else
+            echo "[FAIL] Xray"
+        fi
+    ) &
+    local PID_XRAY=$!
+
+    # 2. Download sing-box (background)
+    (
+        local SING_TAG
+        SING_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || echo "v1.11.0")
+        [[ -z "$SING_TAG" || "$SING_TAG" == "null" ]] && SING_TAG="v1.11.0"
+        local SING_CLEAN="${SING_TAG#v}"
+        local SING_URL="https://github.com/SagerNet/sing-box/releases/download/${SING_TAG}/sing-box-${SING_CLEAN}-linux-${ARCH_SING}.tar.gz"
+        if wget -qO "${TMP_DIR}/sing.tar.gz" "$SING_URL"; then
+            tar -xzf "${TMP_DIR}/sing.tar.gz" -C "${TMP_DIR}/"
+            local SB_PATH
+            SB_PATH=$(find "${TMP_DIR}" -maxdepth 2 -name 'sing-box' -type f 2>/dev/null | head -1)
+            if [[ -n "$SB_PATH" ]]; then
+                mv "$SB_PATH" /usr/local/bin/sing-box && chmod +x /usr/local/bin/sing-box
+                echo "[DONE] sing-box"
+            else
+                echo "[FAIL] sing-box extraction"
+            fi
+        else
+            echo "[FAIL] sing-box"
+        fi
+    ) &
+    local PID_SING=$!
+
+    # 3. Download Mieru (background)
+    (
+        local MIERU_TAG
+        MIERU_TAG=$(curl -s https://api.github.com/repos/enfein/mieru/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || echo "v3.12.0")
+        [[ -z "$MIERU_TAG" || "$MIERU_TAG" == "null" ]] && MIERU_TAG="v3.12.0"
+        local MIERU_CLEAN="${MIERU_TAG#v}"
+        local MIERU_URL="https://github.com/enfein/mieru/releases/download/${MIERU_TAG}/mieru_v${MIERU_CLEAN}_linux_${ARCH_MIERU}.tar.gz"
+        if wget -qO "${TMP_DIR}/mieru.tar.gz" "$MIERU_URL" 2>/dev/null; then
+            tar -xzf "${TMP_DIR}/mieru.tar.gz" -C "${TMP_DIR}/" 2>/dev/null
+            local M_PATH
+            M_PATH=$(find "${TMP_DIR}" -maxdepth 2 -name 'mieru' -type f 2>/dev/null | head -1)
+            if [[ -n "$M_PATH" ]]; then
+                mv "$M_PATH" /usr/local/bin/mieru && chmod +x /usr/local/bin/mieru
+                echo "[DONE] Mieru"
+            fi
+        fi
+    ) &
+    local PID_MIERU=$!
+
+    # Wait for parallel downloads
+    wait "$PID_XRAY" || true
+    wait "$PID_SING" || true
+    wait "$PID_MIERU" || true
+    rm -rf "$TMP_DIR"
+
+    # Set capabilities if setcap exists
+    if command -v setcap &>/dev/null; then
+        setcap 'cap_net_bind_service=+ep' /usr/local/bin/xray 2>/dev/null || true
+        setcap 'cap_net_bind_service=+ep' /usr/local/bin/sing-box 2>/dev/null || true
+    fi
+
+    [[ -x /usr/local/bin/xray ]] && log "Xray-core ready: $(/usr/local/bin/xray version 2>&1 | head -1)"
+    [[ -x /usr/local/bin/sing-box ]] && log "sing-box ready: $(/usr/local/bin/sing-box version 2>&1 | head -1)"
+    [[ -x /usr/local/bin/mieru ]] && log "Mieru ready: $(/usr/local/bin/mieru version 2>&1 | head -1 || echo 'mieru')"
+}
+
+# ══════════════════════════════════════════════════════════════
+# INSTALL MANAGEMENT CLI
+# ══════════════════════════════════════════════════════════════
+
+install_cli_tools() {
+    step "CLI" "Installing unified management tool (vpnpanel)..."
+    mkdir -p /usr/local/bin
+
+    if [[ -f "${PANEL_DIR}/scripts/vpnpanel" ]]; then
+        cp "${PANEL_DIR}/scripts/vpnpanel" /usr/local/bin/vpnpanel
+    elif [[ -f "${CLONE_DIR}/scripts/vpnpanel" ]]; then
+        cp "${CLONE_DIR}/scripts/vpnpanel" /usr/local/bin/vpnpanel
+    fi
+
+    if [[ -f "${PANEL_DIR}/scripts/check.sh" ]]; then
+        cp "${PANEL_DIR}/scripts/check.sh" /usr/local/bin/proxpanel-check
+    elif [[ -f "${CLONE_DIR}/scripts/check.sh" ]]; then
+        cp "${CLONE_DIR}/scripts/check.sh" /usr/local/bin/proxpanel-check
+    fi
+
+    chmod +x /usr/local/bin/vpnpanel 2>/dev/null || true
+    chmod +x /usr/local/bin/proxpanel-check 2>/dev/null || true
+    ln -sf /usr/local/bin/vpnpanel /usr/local/bin/proxpanel 2>/dev/null || true
+    log "CLI 'vpnpanel' and 'proxpanel' installed to /usr/local/bin"
+}
+
+# ══════════════════════════════════════════════════════════════
+# PANEL INSTALLATION
 # ══════════════════════════════════════════════════════════════
 
 install_panel() {
-    # ──── Dependencies ────
+    # ──── Collect Configuration First (Interactive / TTY Safe) ────
+    local PANEL_DOMAIN="$CLI_DOMAIN"
+    local ADMIN_EMAIL="$CLI_EMAIL"
+    local ADMIN_USER="$CLI_USER"
+    local ADMIN_PASS="$CLI_PASS"
 
-    # FIX #4: Install required packages before Docker, not skipping apt update
+    if [[ -z "$PANEL_DOMAIN" ]]; then
+        echo -e "\n  ${BOLD}Panel configuration:${NC}\n"
+        safe_read "  Panel domain (e.g. panel.yourdomain.com): " PANEL_DOMAIN
+    fi
+    if [[ -z "$ADMIN_EMAIL" ]]; then
+        safe_read "  Admin email (for TLS cert & alerts):      " ADMIN_EMAIL
+    fi
+    if [[ -z "$ADMIN_USER" ]]; then
+        safe_read "  Admin username [admin]:                   " ADMIN_USER
+        ADMIN_USER="${ADMIN_USER:-admin}"
+    fi
+    if [[ -z "$ADMIN_PASS" ]]; then
+        safe_read "  Admin password (min 8 chars):             " ADMIN_PASS true
+    fi
+
+    [[ -z "$PANEL_DOMAIN" ]] && fail "Domain is required (e.g. panel.yourdomain.com)"
+    [[ -z "$ADMIN_EMAIL"  ]] && fail "Email is required"
+    [[ -z "$ADMIN_PASS"   ]] && fail "Password is required"
+    [[ ${#ADMIN_PASS} -lt 8 ]] && fail "Password must be at least 8 characters long"
+
+    # ──── System Dependencies ────
+    step "PANEL 1/7" "Installing system dependencies and Docker Engine..."
+    export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl wget jq unzip openssl ca-certificates gnupg lsb-release >/dev/null
+    apt-get install -y -qq curl wget jq unzip tar openssl ca-certificates gnupg lsb-release socat ufw >/dev/null
+    log "System dependencies installed"
 
     if ! command -v docker &>/dev/null; then
-        echo -e "${CYAN}Installing Docker...${NC}"
-        curl -fsSL https://get.docker.com | sh
+        echo -e "${CYAN}Installing Docker Engine...${NC}"
+        curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
         systemctl enable docker &>/dev/null && systemctl start docker
         log "Docker installed"
     else
         log "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
     fi
 
-    # FIX #5: Check docker compose v2 plugin properly
     if ! docker compose version &>/dev/null; then
-        fail "docker compose plugin missing. Install it: apt-get install docker-compose-plugin"
+        apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1 || fail "docker-compose-plugin installation failed"
     fi
     log "Docker Compose $(docker compose version --short)"
 
-    # ──── Collect info ────
-
-    echo -e "\n  ${BOLD}Panel configuration:${NC}\n"
-    read -rp "  Panel domain (e.g. panel.yourdomain.com): " PANEL_DOMAIN
-    read -rp "  Admin email (for SSL certificate):        " ADMIN_EMAIL
-    read -rp "  Admin username [admin]:                   " ADMIN_USER
-    ADMIN_USER="${ADMIN_USER:-admin}"
-
-    # FIX #6: Hide password input
-    read -rsp "  Admin password:                           " ADMIN_PASS
-    echo ""
-
-    [[ -z "$PANEL_DOMAIN" ]] && fail "Domain required"
-    [[ -z "$ADMIN_EMAIL"  ]] && fail "Email required"
-    [[ -z "$ADMIN_PASS"   ]] && fail "Password required"
-    [[ ${#ADMIN_PASS} -lt 8 ]] && fail "Password must be at least 8 characters"
-
-    # Validate email format using pure bash (locale-safe, works with any charset)
-    local EMAIL_LOCAL="${ADMIN_EMAIL%%@*}"
-    local EMAIL_DOMAIN="${ADMIN_EMAIL#*@}"
-    if [[ "$ADMIN_EMAIL" != *"@"* ]] || \
-       [[ -z "$EMAIL_LOCAL" ]] || \
-       [[ -z "$EMAIL_DOMAIN" ]] || \
-       [[ "$EMAIL_DOMAIN" != *"."* ]] || \
-       [[ "${EMAIL_DOMAIN##*.}" == "" ]]; then
-        fail "Invalid email format: $ADMIN_EMAIL"
-    fi
-
-    # ──── Download source ────
-
-    step "PANEL 1/6" "Downloading source..."
+    # ──── Download Source ────
+    step "PANEL 2/7" "Downloading ProxPanel source repository..."
     rm -rf "$CLONE_DIR"
     mkdir -p "$CLONE_DIR"
     if ! curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" | \
          tar xz -C "$CLONE_DIR" --strip-components=1; then
-        fail "Download failed. Check your internet connection."
+        fail "Failed to download repository source archive"
     fi
-    log "Source downloaded"
+    log "Source code downloaded"
 
-    # ──── Setup ────
-
-    step "PANEL 2/6" "Setting up configuration..."
+    # ──── Setup Directory ────
+    step "PANEL 3/7" "Configuring environment and Caddyfile..."
     mkdir -p "$PANEL_DIR"
     cp -r "$CLONE_DIR"/. "$PANEL_DIR/"
-    rm -rf "$CLONE_DIR"
 
-    local DB_PASS; DB_PASS=$(openssl rand -hex 16)
+    local DB_PASS; DB_PASS=$(openssl rand -hex 16 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 32)
     local JWT_SECRET; JWT_SECRET=$(generate_secret)
-    # FIX #8: Set RPC_SECRET at global scope so 'both' mode can use it
     RPC_SECRET=$(generate_secret)
-    local ENC_KEY; ENC_KEY=$(openssl rand -hex 16)
+    local ENC_KEY; ENC_KEY=$(openssl rand -hex 16 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 32)
 
     cat > "$PANEL_DIR/.env" <<EOF
 POSTGRES_PASSWORD=${DB_PASS}
@@ -158,9 +439,10 @@ STRIPE_WEBHOOK_SECRET=
 BACKUP_ENABLED=false
 EOF
 
-    # FIX #9: Generate proper Caddyfile (no variable substitution issues at runtime)
     cat > "$PANEL_DIR/Caddyfile" <<EOF
 ${PANEL_DOMAIN} {
+    tls ${ADMIN_EMAIL}
+
     handle /api/* {
         reverse_proxy server:3000
     }
@@ -175,231 +457,132 @@ ${PANEL_DOMAIN} {
     }
 }
 EOF
+    log "Configuration files ready at ${PANEL_DIR}"
 
-    log "Configuration ready"
+    # ──── System Tuning & Cores ────
+    apply_system_tuning
+    download_proxy_cores
+    configure_firewall
+    install_cli_tools
 
-    # ──── Build ────
-
-    step "PANEL 3/6" "Building containers (this may take a few minutes)..."
+    # ──── Build & Start Containers ────
+    step "PANEL 4/7" "Building and launching Docker microservices..."
     cd "$PANEL_DIR"
-    if ! docker compose build --parallel 2>&1; then
-        fail "Docker build failed. Check the output above for details."
-    fi
-    log "Containers built"
-
-    # ──── Start ────
-
-    step "PANEL 4/6" "Starting all services..."
+    docker compose build --parallel
     docker compose up -d
-    log "Services started"
+    log "Containers started"
 
-    # ──── Wait for server ────
-
-    step "PANEL 5/6" "Waiting for server to become healthy..."
-    local MAX_WAIT=120
+    # ──── Wait for API Health ────
+    step "PANEL 5/7" "Waiting for PostgreSQL and API healthcheck..."
+    local MAX_WAIT=90
     local WAITED=0
     while [[ $WAITED -lt $MAX_WAIT ]]; do
-        # FIX #10: Use curl (available in container) instead of wget for health check
         if docker compose exec -T server curl -sf http://localhost:3000/api/health &>/dev/null; then
             break
         fi
         sleep 3
         WAITED=$((WAITED + 3))
-        echo -ne "\r  Waiting... ${WAITED}s / ${MAX_WAIT}s"
+        echo -ne "\r  Waiting for server readiness... ${WAITED}s / ${MAX_WAIT}s"
     done
     echo ""
 
     if ! docker compose exec -T server curl -sf http://localhost:3000/api/health &>/dev/null; then
-        echo -e "\n${YELLOW}  ! Server health check failed. Showing logs:${NC}"
+        echo -e "${YELLOW}Server logs on timeout:${NC}"
         docker compose logs --tail=30 server
-        fail "Server failed to start within ${MAX_WAIT}s"
+        fail "Server failed to respond to /api/health within ${MAX_WAIT}s"
     fi
-    log "Server is healthy"
+    log "Server API is healthy (200 OK)"
 
-    # ──── Seed ────
-
-    step "PANEL 6/6" "Creating admin user..."
-    # FIX #11: seed.ts uses --username/--password/--email args — verify they are parsed correctly
+    # ──── Seed SuperAdmin User ────
+    step "PANEL 6/7" "Creating super admin user in database..."
     docker compose exec -T server npx tsx prisma/seed.ts \
         --username "$ADMIN_USER" \
         --password "$ADMIN_PASS" \
         --email "$ADMIN_EMAIL" 2>&1 | tail -5
-    log "Admin user created"
+    log "Super admin user created"
 
-    # ──── Firewall ────
+    # ──── Run Health Check ────
+    step "PANEL 7/7" "Running diagnostic health check..."
+    bash "${PANEL_DIR}/scripts/check.sh" || true
 
-    if command -v ufw &>/dev/null; then
-        ufw allow 80/tcp   >/dev/null 2>&1
-        ufw allow 443/tcp  >/dev/null 2>&1
-        ufw allow 443/udp  >/dev/null 2>&1
-        ufw allow 22/tcp   >/dev/null 2>&1
-        echo "y" | ufw enable >/dev/null 2>&1
-        log "Firewall configured"
-    fi
-
-    echo -e "\n  ${GREEN}${BOLD}╔═══════════════════════════════════════╗${NC}"
-    echo -e "  ${GREEN}${BOLD}║       Panel installed successfully!   ║${NC}"
-    echo -e "  ${GREEN}${BOLD}╚═══════════════════════════════════════╝${NC}"
+    echo -e "\n  ${GREEN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "  ${GREEN}${BOLD}║           ProxPanel v3 Successfully Installed!             ║${NC}"
+    echo -e "  ${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}"
     echo -e ""
-    echo -e "  URL:         ${BOLD}https://${PANEL_DOMAIN}${NC}"
-    echo -e "  Login:       ${BOLD}${ADMIN_USER}${NC}"
-    echo -e "  Password:    ${BOLD}${ADMIN_PASS}${NC}"
-    echo -e "  Node secret: ${BOLD}${RPC_SECRET}${NC}"
+    echo -e "  Web Dashboard:   ${BOLD}https://${PANEL_DOMAIN}${NC}"
+    echo -e "  Admin Login:     ${BOLD}${ADMIN_USER}${NC}"
+    echo -e "  Admin Password:  ${BOLD}${ADMIN_PASS}${NC}"
+    echo -e "  Node RPC Secret: ${BOLD}${RPC_SECRET}${NC}"
     echo -e ""
-    echo -e "  ${YELLOW}Save the node secret — you will need it when adding nodes!${NC}\n"
+    echo -e "  Management CLI:  ${CYAN}vpnpanel status | logs | doctor | help${NC}\n"
 }
 
 # ══════════════════════════════════════════════════════════════
-# NODE INSTALL
+# NODE / WORKER INSTALLATION
 # ══════════════════════════════════════════════════════════════
 
 install_node() {
     local MASTER_URL="$1"
     local NODE_SECRET="$2"
 
-    # ──── Dependencies ────
-
+    step "NODE 1/6" "Installing Node.js 20 LTS runtime..."
+    export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl wget jq unzip openssl build-essential >/dev/null
-    log "System packages ready"
+    apt-get install -y -qq curl wget jq unzip tar openssl build-essential socat ufw >/dev/null
 
-    # FIX #12: Install Node.js 20 LTS properly with nodesource
-    if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d 'v')" -lt 18 ]]; then
-        echo -e "${CYAN}Installing Node.js 20 LTS...${NC}"
+    if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d 'v')" -lt 20 ]]; then
+        echo -e "${CYAN}Installing Node.js 20 LTS via nodesource...${NC}"
         curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
         apt-get install -y -qq nodejs >/dev/null
-        log "Node.js $(node -v)"
-    else
-        log "Node.js $(node -v) already installed"
     fi
+    log "Node.js $(node -v) ready"
 
-    # ──── Download source ────
-
-    step "NODE 1/5" "Downloading source..."
+    # ──── Download and Build Worker ────
+    step "NODE 2/6" "Preparing worker source code..."
     rm -rf "$CLONE_DIR"
     mkdir -p "$CLONE_DIR"
     if ! curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" | \
          tar xz -C "$CLONE_DIR" --strip-components=1; then
-        fail "Download failed. Check your internet connection."
+        fail "Failed to download source archive"
     fi
+
     mkdir -p "$NODE_DIR"
-    # FIX #13: Copy only server directory, not entire repo
     cp -r "$CLONE_DIR/server" "$NODE_DIR/"
     rm -rf "$CLONE_DIR"
-    log "Source ready"
 
-    # ──── Install dependencies ────
-
-    step "NODE 2/5" "Installing Node.js dependencies..."
+    step "NODE 3/6" "Installing dependencies and compiling TypeScript worker..."
     cd "$NODE_DIR/server"
     npm install --no-workspaces 2>&1 | tail -3
     npx prisma generate 2>&1 | tail -1
-    log "Dependencies installed"
+    npm run build 2>&1 | tail -3
+    log "Worker compiled"
 
-    # ──── Create .env ────
-
+    # ──── Create Environment File ────
     cat > "$NODE_DIR/server/.env" <<EOF
 MASTER_URL=${MASTER_URL}
 NODE_RPC_SECRET=${NODE_SECRET}
 WORKER_PORT=2087
 CONFIG_DIR=/etc/proxpanel
 XRAY_BIN=/usr/local/bin/xray
-# sing-box v1.13.12 built with with_naive_outbound — handles NaiveProxy AND Mieru inbounds
 SINGBOX_BIN=/usr/local/bin/sing-box
+MIERU_BIN=/usr/local/bin/mieru
+NAIVE_BIN=/usr/local/bin/caddy
 NODE_ENV=production
 EOF
 
-    log "Node .env created"
+    # ──── System Tuning, Cores & Firewall ────
+    apply_system_tuning
+    download_proxy_cores
+    configure_firewall
+    install_cli_tools
 
-    # ──── Download proxy binaries ────
-
-    step "NODE 3/5" "Downloading proxy binaries..."
-    mkdir -p /usr/local/bin /etc/proxpanel
-
-    local ARCH; ARCH=$(uname -m)
-    local ARCH_X64="64"
-    local ARCH_ARM="arm64-v8a"
-    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-        ARCH_X64="arm64-v8a"
-        ARCH_ARM="arm64-v8a"
-    fi
-
-    # ── Xray ──
-    if [[ ! -f /usr/local/bin/xray ]]; then
-        local XRAY_VER; XRAY_VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name')
-        if [[ -n "$XRAY_VER" && "$XRAY_VER" != "null" ]]; then
-            local XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-linux-${ARCH_X64}.zip"
-            if wget -qO /tmp/xray.zip "$XRAY_URL"; then
-                unzip -qo /tmp/xray.zip xray -d /usr/local/bin/ && chmod +x /usr/local/bin/xray
-                rm -f /tmp/xray.zip
-                log "Xray ${XRAY_VER} installed"
-            else
-                warn "Failed to download Xray — skipping"
-            fi
-        else
-            warn "Could not fetch latest Xray version"
-        fi
-    else
-        log "Xray already installed: $(/usr/local/bin/xray version 2>&1 | head -1)"
-    fi
-
-    # ── sing-box (v1.13.12, built with with_naive_outbound — supports NaiveProxy & Mieru inbounds) ──
-    # Separate naive/mieru binaries are no longer needed; sing-box handles both protocols.
-    if [[ ! -f /usr/local/bin/sing-box ]]; then
-        # Pinned to v1.13.12 which includes with_naive_outbound build tag.
-        # To upgrade, change SING_PINNED_VER below; the fallback logic finds the latest stable release.
-        local SING_PINNED_VER="1.13.12"
-        local SING_VER="v${SING_PINNED_VER}"
-
-        # Fallback: resolve latest non-alpha/non-beta stable release from GitHub API
-        if [[ "$SING_PINNED_VER" == "" ]]; then
-            SING_VER=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases | \
-                jq -r '[.[] | select(.prerelease==false and (.tag_name | test("alpha|beta") | not)) | .tag_name] | first')
-        fi
-
-        if [[ -n "$SING_VER" && "$SING_VER" != "null" ]]; then
-            local SING_TAG="${SING_VER#v}"
-            local SING_ARCH="amd64"
-            [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && SING_ARCH="arm64"
-            local SING_URL="https://github.com/SagerNet/sing-box/releases/download/${SING_VER}/sing-box-${SING_TAG}-linux-${SING_ARCH}.tar.gz"
-            if wget -qO /tmp/sing.tar.gz "$SING_URL"; then
-                tar -xzf /tmp/sing.tar.gz -C /tmp/
-                local SING_BIN; SING_BIN=$(find /tmp -maxdepth 2 -name 'sing-box' -type f 2>/dev/null | head -1)
-                if [[ -n "$SING_BIN" ]]; then
-                    mv "$SING_BIN" /usr/local/bin/sing-box && chmod +x /usr/local/bin/sing-box
-                    log "sing-box ${SING_VER} installed (NaiveProxy + Mieru support via with_naive_outbound)"
-                else
-                    warn "sing-box binary not found in archive"
-                fi
-                rm -rf /tmp/sing.tar.gz /tmp/sing-box-*
-            else
-                warn "Failed to download sing-box — skipping"
-            fi
-        else
-            warn "Could not resolve sing-box version"
-        fi
-    else
-        log "sing-box already installed: $(/usr/local/bin/sing-box version 2>&1 | head -1)"
-    fi
-
-    # ──── Build TypeScript ────
-
-    step "NODE 4/5" "Building worker..."
-    cd "$NODE_DIR/server"
-    if ! npm run build 2>&1 | tail -5; then
-        fail "TypeScript build failed. Check the output above."
-    fi
-    log "Worker built"
-
-    # ──── Systemd service ────
-
-    step "NODE 5/5" "Creating systemd service..."
-
-    local NODE_BIN; NODE_BIN=$(which node)
+    # ──── Systemd Service ────
+    step "NODE 4/6" "Configuring systemd unit (${NODE_SERVICE})..."
+    local NODE_BIN; NODE_BIN=$(command -v node)
 
     cat > /etc/systemd/system/${NODE_SERVICE}.service <<EOF
 [Unit]
-Description=ProxPanel Node Worker
+Description=ProxPanel Node Proxy Worker
 Documentation=https://github.com/Velio322/proxy-panel-v3
 After=network-online.target
 Wants=network-online.target
@@ -410,17 +593,15 @@ User=root
 WorkingDirectory=${NODE_DIR}/server
 ExecStart=${NODE_BIN} dist/worker/index.js
 Restart=always
-RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=3
+RestartSec=3s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 EnvironmentFile=${NODE_DIR}/server/.env
 Environment=NODE_ENV=production
-
-# Security hardening
+LimitNOFILE=1048576
+LimitNPROC=524288
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 PrivateTmp=true
-NoNewPrivileges=false
-
-# Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=proxpanel-node
@@ -431,44 +612,37 @@ EOF
 
     systemctl daemon-reload
     systemctl enable ${NODE_SERVICE}
-    systemctl start  ${NODE_SERVICE}
+    systemctl restart ${NODE_SERVICE}
 
-    # FIX: Verify service actually started
     sleep 3
     if systemctl is-active --quiet ${NODE_SERVICE}; then
-        log "Node worker service started and running"
+        log "ProxPanel Node worker is running (systemd active)"
     else
-        echo -e "\n${YELLOW}  ! Service failed to start. Showing journal:${NC}"
+        echo -e "${YELLOW}Service failed to start. Logs:${NC}"
         journalctl -u ${NODE_SERVICE} --no-pager -n 20
-        fail "Node worker failed to start. Check the logs above."
+        fail "Node worker failed to start"
     fi
 
-    # ──── Firewall ────
-
-    if command -v ufw &>/dev/null; then
-        ufw allow 2087/tcp >/dev/null 2>&1  # Worker API port
-        ufw allow 443/tcp  >/dev/null 2>&1
-        ufw allow 443/udp  >/dev/null 2>&1
-        ufw allow 22/tcp   >/dev/null 2>&1
-        echo "y" | ufw enable >/dev/null 2>&1
-        log "Firewall configured"
+    step "NODE 5/6" "Checking worker API endpoint..."
+    if curl -sf http://127.0.0.1:2087/health &>/dev/null; then
+        log "Worker healthcheck on port 2087: 200 OK"
     fi
 
-    echo -e "\n  ${GREEN}${BOLD}╔═══════════════════════════════════════╗${NC}"
-    echo -e "  ${GREEN}${BOLD}║       Node installed successfully!    ║${NC}"
-    echo -e "  ${GREEN}${BOLD}╚═══════════════════════════════════════╝${NC}"
+    step "NODE 6/6" "Running diagnostic health check..."
+    bash /usr/local/bin/proxpanel-check || true
+
+    echo -e "\n  ${GREEN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "  ${GREEN}${BOLD}║           ProxPanel Node Successfully Installed!           ║${NC}"
+    echo -e "  ${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}"
     echo -e ""
-    echo -e "  Service: ${BOLD}${NODE_SERVICE}${NC}"
-    echo -e "  Master:  ${BOLD}${MASTER_URL}${NC}"
-    echo -e "  Port:    ${BOLD}2087${NC}"
-    echo -e "  Config:  ${BOLD}${NODE_DIR}/server/.env${NC}"
-    echo -e ""
-    echo -e "  Manage:  ${CYAN}systemctl status ${NODE_SERVICE}${NC}"
-    echo -e "  Logs:    ${CYAN}journalctl -u ${NODE_SERVICE} -f${NC}\n"
+    echo -e "  Service:      ${BOLD}${NODE_SERVICE}${NC}"
+    echo -e "  Master URL:   ${BOLD}${MASTER_URL}${NC}"
+    echo -e "  Worker Port:  ${BOLD}2087${NC}"
+    echo -e "  CLI Tool:     ${CYAN}vpnpanel status | logs node | doctor${NC}\n"
 }
 
 # ══════════════════════════════════════════════════════════════
-# MAIN
+# MAIN DISPATCHER
 # ══════════════════════════════════════════════════════════════
 
 case "$INSTALL_MODE" in
@@ -476,39 +650,47 @@ case "$INSTALL_MODE" in
         install_panel
         ;;
     node)
-        echo -e "\n  ${BOLD}Node configuration:${NC}\n"
-        read -rp "  Panel URL (e.g. https://panel.yourdomain.com): " MASTER_URL
-        read -rp "  Node secret (from panel Settings page):        " NODE_SECRET
-        [[ -z "$MASTER_URL"   ]] && fail "Panel URL is required"
-        [[ -z "$NODE_SECRET"  ]] && fail "Node secret is required"
-        # FIX: Normalize URL — strip trailing slash
+        MASTER_URL="$CLI_MASTER_URL"
+        NODE_SECRET="$CLI_SECRET"
+        if [[ -z "$MASTER_URL" ]]; then
+            echo -e "\n  ${BOLD}Node configuration:${NC}\n"
+            safe_read "  Master Panel URL (e.g. https://panel.yourdomain.com): " MASTER_URL
+        fi
+        if [[ -z "$NODE_SECRET" ]]; then
+            safe_read "  Node RPC Secret (from Panel Settings / Installation): " NODE_SECRET
+        fi
+        [[ -z "$MASTER_URL"  ]] && fail "Master URL is required"
+        [[ -z "$NODE_SECRET" ]] && fail "Node secret is required"
         MASTER_URL="${MASTER_URL%/}"
         install_node "$MASTER_URL" "$NODE_SECRET"
         ;;
     both)
+        echo -e "${CYAN}${BOLD}▶ Starting All-In-One Installation (Panel + Node)...${NC}"
         install_panel
         echo ""
-        step "COMBINED" "Installing node worker on same server..."
-        # FIX #8 (cont): RPC_SECRET is now a global var set by install_panel
-        [[ -z "$RPC_SECRET" ]] && fail "Internal error: RPC_SECRET not set after panel install"
+        step "ALL-IN-ONE" "Setting up local Node Worker on Master server..."
+        [[ -z "$RPC_SECRET" ]] && fail "Internal error: RPC_SECRET not generated during Panel install"
         install_node "http://127.0.0.1:3000" "$RPC_SECRET"
-        step "NODE" "Registering node in panel database..."
-        for i in $(seq 1 30); do
+
+        step "NODE REG" "Registering local Node Worker in Master Database..."
+        for i in $(seq 1 15); do
             RESP=$(curl -sf -X POST "http://127.0.0.1:3000/api/v1/nodes/self/register" \
                 -H 'Content-Type: application/json' \
-                -d "{\"token\":\"${RPC_SECRET}\",\"name\":\"local-node\",\"host\":\"127.0.0.1\",\"port\":443,\"apiPort\":2087}" 2>/dev/null)
+                -d "{\"token\":\"${RPC_SECRET}\",\"name\":\"master-node-01\",\"host\":\"127.0.0.1\",\"port\":443,\"apiPort\":2087}" 2>/dev/null || echo "")
             if echo "$RESP" | grep -q '"nodeId"'; then
-                log "Node registered in panel database"
+                log "Local node successfully registered with Master Panel!"
                 break
-            fi
-            if [ "$i" -eq 30 ]; then
-                warn "Node auto-registration timed out. The worker will register itself on first connection."
             fi
             sleep 2
         done
         ;;
+    *)
+        fail "Invalid mode: $INSTALL_MODE"
+        ;;
 esac
 
-echo -e "\n${GREEN}${BOLD}════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  Installation complete!${NC}"
-echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}\n"
+rm -rf "$CLONE_DIR" 2>/dev/null || true
+
+echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}${BOLD}  Installation Complete! Type 'vpnpanel' to manage your server.${NC}"
+echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════${NC}\n"

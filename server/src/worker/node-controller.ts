@@ -38,8 +38,7 @@ export class NodeController extends EventEmitter {
   private startTime: number = Date.now();
   private currentInbounds: InboundConfig[] = [];
   private currentRouting: RoutingRule[] = [];
-  private isRestarting: boolean = false;
-  private restartLock: Promise<void> | null = null;
+  private queuePromise: Promise<void> = Promise.resolve();
 
   constructor(config: NodeControllerConfig) {
     super();
@@ -58,26 +57,18 @@ export class NodeController extends EventEmitter {
    * Pipeline: Remap ports → Generate core configs → Write HAProxy → Graceful restart.
    */
   async applyConfig(inbounds: InboundConfig[], routing?: RoutingRule[]): Promise<boolean> {
-    // Acquire restart lock — prevent concurrent restarts
-    if (this.isRestarting) {
-      console.log('[Controller] Config change during restart — queuing');
-      await this.restartLock;
-    }
-
-    this.isRestarting = true;
-    this.restartLock = this._doRestart(inbounds, routing);
-
-    try {
-      await this.restartLock;
-      return true;
-    } catch (error: any) {
-      console.error(`[Controller] Config apply failed: ${error.message}`);
-      this.emit('error', error);
-      return false;
-    } finally {
-      this.isRestarting = false;
-      this.restartLock = null;
-    }
+    return new Promise<boolean>((resolve) => {
+      this.queuePromise = this.queuePromise
+        .then(async () => {
+          await this._doRestart(inbounds, routing);
+          resolve(true);
+        })
+        .catch((error: any) => {
+          console.error(`[Controller] Config apply failed: ${error.message}`);
+          this.emit('error', error);
+          resolve(false);
+        });
+    });
   }
 
   private async _doRestart(inbounds: InboundConfig[], routing?: RoutingRule[]): Promise<void> {

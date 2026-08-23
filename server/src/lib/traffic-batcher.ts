@@ -71,8 +71,9 @@ export class TrafficBatcher extends EventEmitter {
 
     for (const entry of entries) {
       const now = Date.now();
+      const randomNonce = Math.random().toString(36).substring(2, 9);
 
-      // Store as JSON in a Redis sorted set (score = timestamp)
+      // Store as JSON with unique nonce in a Redis sorted set (score = timestamp)
       const data = JSON.stringify({
         clientId: entry.clientId,
         nodeId: entry.nodeId,
@@ -80,16 +81,17 @@ export class TrafficBatcher extends EventEmitter {
         download: Number(entry.download),
         protocol: entry.protocol,
         inboundTag: entry.inboundTag,
+        nonce: randomNonce,
       });
 
-      pipeline.zadd(`traffic_pending:${entry.nodeId}`, now, `${entry.clientId}:${data}`);
+      pipeline.zadd(`traffic_pending:${entry.nodeId}`, now, data);
       pipeline.zadd('traffic_pending_keys', now, entry.nodeId);
     }
 
     await pipeline.exec();
   }
 
-  private emailToIdCache = new Map<string, string>();
+  private emailToIdCache = new Map<string, { id: string; expiresAt: number }>();
 
   /**
    * Add traffic data by email (resolves email to clientId).
@@ -97,7 +99,9 @@ export class TrafficBatcher extends EventEmitter {
    */
   async add(data: { nodeId: string; email: string; upload: bigint | number; download: bigint | number; protocol?: string; inboundTag?: string }): Promise<void> {
     try {
-      let clientId = this.emailToIdCache.get(data.email);
+      const now = Date.now();
+      const cached = this.emailToIdCache.get(data.email);
+      let clientId = cached && cached.expiresAt > now ? cached.id : null;
 
       if (!clientId) {
         const prisma = getPrisma();
@@ -112,12 +116,12 @@ export class TrafficBatcher extends EventEmitter {
         });
 
         if (!client) {
-          // Silent skip or log unknown client
+          // Silent skip unknown client
           return;
         }
 
         clientId = client.id;
-        this.emailToIdCache.set(data.email, clientId);
+        this.emailToIdCache.set(data.email, { id: clientId, expiresAt: now + 5 * 60 * 1000 }); // 5 min TTL
         
         // Limit cache size
         if (this.emailToIdCache.size > 10000) {
@@ -142,7 +146,7 @@ export class TrafficBatcher extends EventEmitter {
 
   /**
    * Flush accumulated traffic to PostgreSQL.
-   * Uses bulk INSERT to minimize DB round-trips.
+   * Uses bulk INSERT to minimize DB round-trips and guarantees no data loss.
    */
   async flush(): Promise<void> {
     if (this.isFlushing) return;
@@ -161,11 +165,12 @@ export class TrafficBatcher extends EventEmitter {
 
       let totalFlushed = 0;
       const allEntries: TrafficEntry[] = [];
+      const flushSnapshotTime = Date.now();
 
-      // Process each node's pending traffic
+      // Process each node's pending traffic up to snapshot timestamp
       for (const nodeId of nodeKeys) {
         const pendingKey = `traffic_pending:${nodeId}`;
-        const items = await r.zrangebyscore(pendingKey, '-inf', '+inf');
+        const items = await r.zrangebyscore(pendingKey, '-inf', flushSnapshotTime);
 
         if (items.length === 0) continue;
 
@@ -174,7 +179,9 @@ export class TrafficBatcher extends EventEmitter {
 
         for (const item of items) {
           try {
-            const data = JSON.parse(item.split(':').slice(1).join(':'));
+            // Handle both legacy (clientId:json) and new (pure json) member formats
+            const jsonStr = item.startsWith('{') ? item : item.substring(item.indexOf('{'));
+            const data = JSON.parse(jsonStr);
             const existing = clientAgg.get(data.clientId);
             if (existing) {
               existing.upload += data.upload;
@@ -200,32 +207,35 @@ export class TrafficBatcher extends EventEmitter {
           });
         }
 
-        // Clear processed items from Redis
-        await r.zremrangebyscore(pendingKey, '-inf', '+inf');
-        await r.zrem('traffic_pending_keys', nodeId);
+        // Clear ONLY processed items from Redis (up to snapshot timestamp)
+        await r.zremrangebyscore(pendingKey, '-inf', flushSnapshotTime);
+        const remaining = await r.zcard(pendingKey);
+        if (remaining === 0) {
+          await r.zrem('traffic_pending_keys', nodeId);
+        }
       }
 
-      // Bulk INSERT to PostgreSQL (single query for all entries)
+      // Bulk INSERT to PostgreSQL without losing any batch items
       if (allEntries.length > 0) {
-        const batch = allEntries.slice(0, this.maxBatchSize);
-
-        // Use Prisma's createMany for bulk insert
-        await prisma.trafficLog.createMany({
-          data: batch.map((e) => ({
-            clientId: e.clientId,
-            nodeId: e.nodeId,
-            upload: BigInt(e.upload),
-            download: BigInt(e.download),
-            protocol: e.protocol as any,
-            inboundTag: e.inboundTag,
-            recordAt: e.recordAt,
-          })),
-          skipDuplicates: true,
-        });
+        for (let i = 0; i < allEntries.length; i += this.maxBatchSize) {
+          const batch = allEntries.slice(i, i + this.maxBatchSize);
+          await prisma.trafficLog.createMany({
+            data: batch.map((e) => ({
+              clientId: e.clientId,
+              nodeId: e.nodeId,
+              upload: BigInt(e.upload),
+              download: BigInt(e.download),
+              protocol: e.protocol as any,
+              inboundTag: e.inboundTag,
+              recordAt: e.recordAt,
+            })),
+            skipDuplicates: true,
+          });
+        }
 
         // Update client cumulative counters
         const clientUpdates = new Map<string, { upload: number; download: number }>();
-        for (const entry of batch) {
+        for (const entry of allEntries) {
           const existing = clientUpdates.get(entry.clientId);
           if (existing) {
             existing.upload += entry.upload;
@@ -235,8 +245,10 @@ export class TrafficBatcher extends EventEmitter {
           }
         }
 
-        // Batch update clients
+        // Batch update clients with auto-ban on trafficLimit
         const updatePromises: Promise<any>[] = [];
+        const { cacheInvalidatePattern } = await import('../lib/redis');
+
         for (const [clientId, traffic] of clientUpdates) {
           const totalTraffic = BigInt(traffic.upload) + BigInt(traffic.download);
           updatePromises.push(
@@ -248,17 +260,27 @@ export class TrafficBatcher extends EventEmitter {
                 downloadTraffic: { increment: BigInt(traffic.download) },
                 lastActiveAt: new Date(),
               },
+              select: { id: true, subToken: true, usedTraffic: true, trafficLimit: true, banned: true },
+            }).then(async (updated) => {
+              if (updated && !updated.banned && updated.trafficLimit > 0n && updated.usedTraffic >= updated.trafficLimit) {
+                await prisma.client.update({
+                  where: { id: updated.id },
+                  data: { banned: true },
+                });
+                await cacheInvalidatePattern(`sub:${updated.subToken}*`);
+                console.log(`[TrafficBatcher] Client ${updated.id} auto-banned: exceeded traffic limit (${updated.usedTraffic}/${updated.trafficLimit})`);
+              }
             }).catch(() => {}) // Silently skip if client not found
           );
         }
 
-        // Execute client updates in parallel (max 100 concurrent)
+        // Execute client updates in parallel chunks
         const CHUNK_SIZE = 100;
         for (let i = 0; i < updatePromises.length; i += CHUNK_SIZE) {
           await Promise.all(updatePromises.slice(i, i + CHUNK_SIZE));
         }
 
-        totalFlushed = batch.length;
+        totalFlushed = allEntries.length;
         this.totalFlushed += totalFlushed;
         this.flushCount++;
 

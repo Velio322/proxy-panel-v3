@@ -285,6 +285,7 @@ export class ProcessManager extends EventEmitter {
   private maxRestarts = 5;
   private restartWindowMs = 60_000; // 1 minute
   private restartBackoffBase = 2000; // 2 seconds
+  private restartTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(config: {
     configDir: string;
@@ -397,7 +398,7 @@ export class ProcessManager extends EventEmitter {
         for (const inbound of naiveFallback) {
           if (!this.naive.start(inbound)) allSuccess = false;
         }
-        for (const inbound of mieruInbounds) {
+        for (const inbound of mieruFallback) {
           if (!this.mieru.start(inbound)) allSuccess = false;
         }
       }
@@ -531,6 +532,12 @@ export class ProcessManager extends EventEmitter {
       return;
     }
 
+    // Clear any existing restart timer for this core
+    const existingTimer = this.restartTimers.get(name);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
     // Exponential backoff
     const delay = this.restartBackoffBase * Math.pow(2, state.restartCount);
     state.restartCount++;
@@ -538,12 +545,15 @@ export class ProcessManager extends EventEmitter {
     console.log(`[PM] ${name}: Auto-restart #${state.restartCount} in ${delay}ms`);
     this.emit('restart', { core: name, attempt: state.restartCount, delay });
 
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      this.restartTimers.delete(name);
       if (this.currentInbounds.length > 0) {
         console.log(`[PM] ${name}: Restarting...`);
         this.applyConfig(this.currentInbounds);
       }
     }, delay);
+
+    this.restartTimers.set(name, timer);
   }
 
   // ══════════════════════════════════════════════
@@ -561,6 +571,12 @@ export class ProcessManager extends EventEmitter {
 
   stopAll(): void {
     console.log('[PM] Stopping all cores...');
+    // Clear all pending restart timers
+    for (const [, timer] of this.restartTimers) {
+      clearTimeout(timer);
+    }
+    this.restartTimers.clear();
+
     this.xray.stop();
     this.singbox.stop();
     this.naive.stopAll();

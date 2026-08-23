@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'http';
+import https from 'https';
 import os from 'os';
 import { config } from '../config';
 import path from 'path';
@@ -24,11 +25,13 @@ async function registerNode(masterUrl: string, nodeSecret: string): Promise<void
     try {
       await new Promise<void>((resolve, reject) => {
         const parsed = new URL(url);
-        const req = http.request({
+        const requestModule = parsed.protocol === 'https:' ? https : http;
+        const req = requestModule.request({
           hostname: parsed.hostname,
-          port: parsed.port,
-          path: parsed.pathname,
+          port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+          path: parsed.pathname + parsed.search,
           method: 'POST',
+          rejectUnauthorized: false,
           headers: { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) },
           timeout: 5000,
         }, (res) => {

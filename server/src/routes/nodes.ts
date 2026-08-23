@@ -137,22 +137,26 @@ router.post('/', requireAdmin, auditLog('CREATE', 'node'), async (req: AuthReque
     const prisma = getPrisma();
     const data = createNodeSchema.parse(req.body);
 
-    // Check reachability for remote nodes
+    let reachable = true;
+    // Check reachability for remote nodes as advisory check
     if (!isLocalHost(data.host)) {
-      const reachable = await checkReachability(data.host, data.apiPort);
-      if (!reachable) {
-        return res.status(422).json({
-          error: `Node at ${data.host}:${data.apiPort} is unreachable. Check firewall rules and ensure the worker is running.`,
-          reachable: false,
-          setupInstructions: buildSetupInstructions(data.secret, data.apiPort),
-        });
-      }
+      reachable = await checkReachability(data.host, data.apiPort, 2000);
     }
 
-    const node = await prisma.node.create({ data });
+    const node = await prisma.node.create({
+      data: {
+        ...data,
+        status: reachable ? 'ONLINE' : 'OFFLINE',
+      },
+    });
+
     res.status(201).json({
       ...node,
+      reachable,
       setupInstructions: isLocalHost(data.host) ? undefined : buildSetupInstructions(data.secret, data.apiPort),
+      warning: !reachable && !isLocalHost(data.host)
+        ? `Node is currently offline/unreachable at ${data.host}:${data.apiPort}. Run the setup instructions on the server to connect it.`
+        : undefined,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

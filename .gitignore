@@ -43,17 +43,13 @@ client/test*.mjs
 client/verify*.mjs
 client/screenshot*.png
 
-# Temp
+# Temp & spreadsheets
 /tmp/
 *.tmp
 *.temp
+*.xlsm
+create_*.py
 
 # Coverage
 coverage/
 .nyc_output/
-
-# Debug & screenshot test scripts (development artifacts)
-client/shot*.mjs
-client/debug*.mjs
-client/verify*.mjs
-client/test*.mjs

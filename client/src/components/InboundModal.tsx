@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
-import { X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { X, Loader2, ChevronLeft, ChevronRight, KeyRound, Sparkles } from 'lucide-react';
 import { Inbound } from '@/lib/api';
 
 export type Protocol = 'VLESS' | 'VMESS' | 'TROJAN' | 'SHADOWSOCKS' | 'HYSTERIA2' | 'NAIVEPROXY' | 'MIERU' | 'TUIC';
@@ -10,99 +9,220 @@ export type Fingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random' | 
 export type Flow = '' | 'xtls-rprx-vision' | 'xtls-rprx-direct' | 'xtls-rprx-splice';
 
 export interface InboundForm {
-  id?: string; nodeId: string; protocol: Protocol; tag: string; port: number; listen: string;
-  enable: boolean; remark: string; sniffing: boolean; security: Security;
-  uuid: string; password: string; flow: Flow; method: string; alterId: number;
-  transport: Transport; sni: string; fingerprint: Fingerprint; alpn: string; allowInsecure: boolean;
-  minVersion: string; maxVersion: string;
-  realityPublicKey: string; realityPrivateKey: string; realityShortId: string;
-  realitySpiderX: string; realityDest: string; realityServerNames: string;
-  wsPath: string; wsHost: string; wsMaxEarlyData: number; wsUseBrowserAgent: boolean;
-  grpcServiceName: string; grpcMultiMode: boolean;
-  h2Path: string; h2Host: string; h2Method: string;
-  httpupgradePath: string; httpupgradeHost: string;
-  xhttpPath: string; xhttpMode: string;
-  kcpHeaderType: string; kcpSeed: string;
+  id?: string;
+  nodeId: string;
+  protocol: Protocol;
+  tag: string;
+  port: number;
+  listen: string;
+  enable: boolean;
+  remark: string;
+  sniffing: boolean;
+  security: Security;
+  uuid: string;
+  password: string;
+  flow: Flow;
+  method: string;
+  alterId: number;
+  transport: Transport;
+  sni: string;
+  fingerprint: Fingerprint;
+  alpn: string;
+  allowInsecure: boolean;
+  minVersion: string;
+  maxVersion: string;
+  realityPublicKey: string;
+  realityPrivateKey: string;
+  realityShortId: string;
+  realitySpiderX: string;
+  realityDest: string;
+  realityServerNames: string;
+  wsPath: string;
+  wsHost: string;
+  wsMaxEarlyData: number;
+  wsUseBrowserAgent: boolean;
+  grpcServiceName: string;
+  grpcMultiMode: boolean;
+  h2Path: string;
+  h2Host: string;
+  h2Method: string;
+  httpupgradePath: string;
+  httpupgradeHost: string;
+  xhttpPath: string;
+  xhttpMode: string;
+  kcpHeaderType: string;
+  kcpSeed: string;
   certificates: string;
-  sniffingDestOverride: string[]; sniffingMetadataOnly: boolean; sniffingRouteOnly: boolean;
-  sniffingExcludedDomains: string; sniffingExcludedIPs: string;
-  naiveProxy: string; naiveProto: string; naiveNonce: string;
-  naivePadding: boolean; naivePaddingLength: number; naivePaddingMode: string;
-  mieruAuth: string; mieruSessionPlacement: string; mieruSequencePlacement: string;
-  mieruBufferReadSize: number; mieruBufferWriteSize: number;
-  hy2ObfsType: string; hy2ObfsPassword: string; hy2BandwidthUp: string; hy2BandwidthDown: string;
-  hy2MaxClient: number; hy2MaxStream: number;
-  routingBlockTorrent: boolean; routingBlockAds: boolean;
+  sniffingDestOverride: string[];
+  sniffingMetadataOnly: boolean;
+  sniffingRouteOnly: boolean;
+  sniffingExcludedDomains: string;
+  sniffingExcludedIPs: string;
+  // NaiveProxy parameters
+  naiveDomain: string;
+  naiveEmail: string;
+  naiveTlsMode: 'letsencrypt' | 'custom' | 'acme';
+  naiveCertFile: string;
+  naiveKeyFile: string;
+  naiveFallbackRoot: string;
+  naiveWarpUpstream: string;
+  naiveHideIp: boolean;
+  naiveHideVia: boolean;
+  naiveProbeResistance: boolean;
+  // Mieru parameters
+  mieruTransport: 'tcp' | 'udp' | 'both';
+  mieruLoggingLevel: string;
+  mieruPortRange: string;
+  // Hysteria 2 parameters
+  hy2ObfsType: string;
+  hy2ObfsPassword: string;
+  hy2BandwidthUp: string;
+  hy2BandwidthDown: string;
+  hy2MaxClient: number;
+  hy2MaxStream: number;
+  routingBlockTorrent: boolean;
+  routingBlockAds: boolean;
   portShares: PortShareForm[];
 }
 
-export interface PortShareForm { id?: string; protocol: Protocol; tag: string; host: string; path: string; enable: boolean; }
+export interface PortShareForm {
+  id?: string;
+  protocol: Protocol;
+  tag: string;
+  host: string;
+  path: string;
+  enable: boolean;
+}
 
 const TABS = [
-  { key: 'general', label: 'General' }, { key: 'transport', label: 'Transport' },
-  { key: 'security', label: 'Security' }, { key: 'sniffing', label: 'Sniffing' },
-  { key: 'advanced', label: 'Advanced JSON' }, { key: 'portshare', label: 'Port-Sharing' },
+  { key: 'general', label: 'General' },
+  { key: 'transport', label: 'Transport' },
+  { key: 'security', label: 'Security & TLS' },
+  { key: 'sniffing', label: 'Sniffing' },
+  { key: 'advanced', label: 'JSON Config' },
+  { key: 'portshare', label: 'Port Sharing' },
 ] as const;
 type TabKey = typeof TABS[number]['key'];
 
-// ── Themed style helpers ──
-const S = {
-  bg: 'var(--surface)', bgR: 'var(--bg-raised)', bgS: 'var(--bg-sunken)',
-  fg: 'var(--fg)', fgM: 'var(--fg-muted)', fgS: 'var(--fg-subtle)',
-  border: 'var(--border)', borderS: 'var(--border-subtle)',
-  accent: 'var(--accent)', accentM: 'var(--accent-muted)',
-  input: { background: 'var(--bg-raised)', border: '1px solid var(--border)', color: 'var(--fg)' } as React.CSSProperties,
-  label: { fontSize: 11, fontWeight: 500, color: 'var(--fg-muted)', marginBottom: 4 } as React.CSSProperties,
-};
+const PROTOCOLS: Protocol[] = ['VLESS', 'HYSTERIA2', 'TROJAN', 'SHADOWSOCKS', 'NAIVEPROXY', 'MIERU', 'VMESS', 'TUIC'];
+const TRANSPORTS: Transport[] = ['tcp', 'ws', 'grpc', 'httpupgrade', 'xhttp', 'h2', 'kcp'];
+const FINGERPRINTS: Fingerprint[] = ['chrome', 'firefox', 'safari', 'edge', 'random', 'randomized', 'hello', 'zerossl'];
+const FLOWS: Flow[] = ['', 'xtls-rprx-vision', 'xtls-rprx-direct', 'xtls-rprx-splice'];
+const SS_METHODS = ['aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305', '2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305'];
+const SNIFFING_DESTS = ['http', 'tls', 'quic', 'stun', 'dns', 'bittorrent'];
 
-function Btn({ children, active, onClick, className }: { children: React.ReactNode; active?: boolean; onClick?: () => void; className?: string }) {
-  return <button onClick={onClick} className={cn("px-2.5 py-1.5 rounded text-[11px] font-medium transition-colors", className)}
-    style={{ background: active ? 'var(--accent-muted)' : 'transparent', color: active ? 'var(--accent)' : 'var(--fg-muted)', border: active ? '1px solid var(--accent)' : '1px solid var(--border)' }}>{children}</button>;
+interface InboundModalProps {
+  inbound?: Inbound;
+  nodes: { id: string; name: string; host: string; status: string }[];
+  onClose: () => void;
+  onSave: (data: InboundForm) => Promise<void>;
 }
-
-interface InboundModalProps { inbound?: Inbound; nodes: { id: string; name: string; host: string; status: string }[]; onClose: () => void; onSave: (data: InboundForm) => Promise<void>; }
 
 export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalProps) {
   const [tab, setTab] = useState<TabKey>('general');
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<InboundForm>(() => inbound ? inboundToForm(inbound) : defaultForm());
-  const update = useCallback((key: keyof InboundForm, value: any) => setForm((f) => ({ ...f, [key]: value })), []);
-  const handleSave = async () => { setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
+  const [form, setForm] = useState<InboundForm>(() => (inbound ? inboundToForm(inbound) : defaultForm()));
+
+  const update = useCallback((key: keyof InboundForm, value: any) => {
+    setForm((f) => ({ ...f, [key]: value }));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const ti = TABS.findIndex((t) => t.key === tab);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded" style={{ background: S.bg, border: `1px solid ${S.border}` }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${S.borderS}` }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div
+        className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/80 bg-bg-raised/40">
           <div className="flex items-center gap-3">
-            <span className={cn("px-2 py-0.5 rounded text-[10px] font-semibold border", protocolColor(form.protocol))}>{form.protocol}</span>
-            <h2 className="text-sm font-semibold" style={{ color: S.fg }}>{inbound ? `Edit ${inbound.tag}` : 'Create Inbound'}</h2>
-            {form.tag && <span className="text-[11px] font-mono" style={{ color: S.fgS }}>{form.tag}</span>}
+            <span className="px-2.5 py-1 rounded-lg text-xs font-bold font-mono tracking-wider bg-accent/15 text-accent border border-accent/30">
+              {form.protocol}
+            </span>
+            <div>
+              <h2 className="text-base font-bold text-fg">
+                {inbound ? `Edit Inbound: ${inbound.tag}` : 'Create Inbound Port'}
+              </h2>
+              <p className="text-xs text-fg-subtle">Configure proxy protocol, transport, encryption, and routing</p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded" style={{ color: S.fgM }}><X size={16} /></button>
+          <button onClick={onClose} className="p-2 rounded-xl text-fg-muted hover:text-fg hover:bg-surface-hover transition-colors">
+            <X size={18} />
+          </button>
         </div>
-        <div className="flex items-center gap-1 px-5 pt-2.5 shrink-0">
-          {TABS.map((t, i) => <button key={t.key} onClick={() => setTab(t.key)} className="px-2.5 py-1.5 rounded text-[11px] font-medium"
-            style={{ background: tab === t.key ? 'var(--accent-muted)' : 'transparent', color: tab === t.key ? 'var(--accent)' : 'var(--fg-muted)' }}>
-            <span style={{ color: 'var(--fg-subtle)', marginRight: 4 }}>{i + 1}.</span>{t.label}</button>)}
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-1.5 px-6 pt-3 border-b border-border/50 bg-bg-sunken/30 overflow-x-auto">
+          {TABS.map((t, i) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-3.5 py-2 rounded-t-xl text-xs font-semibold transition-all flex items-center gap-1.5 border-b-2 ${
+                tab === t.key
+                  ? 'border-accent text-accent bg-surface shadow-sm'
+                  : 'border-transparent text-fg-muted hover:text-fg hover:bg-surface-hover/50'
+              }`}
+            >
+              <span className="text-[10px] text-fg-subtle">{i + 1}.</span>
+              {t.label}
+            </button>
+          ))}
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+
+        {/* Tab Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0 bg-bg/30">
           {tab === 'general' && <TabGeneral form={form} update={update} nodes={nodes} />}
           {tab === 'transport' && <TabTransport form={form} update={update} />}
           {tab === 'security' && <TabSecurity form={form} update={update} />}
           {tab === 'sniffing' && <TabSniffing form={form} update={update} />}
-          {tab === 'advanced' && <TabAdvancedJSON form={form} update={update} />}
+          {tab === 'advanced' && <TabAdvancedJSON form={form} />}
           {tab === 'portshare' && <TabPortShare form={form} update={update} />}
         </div>
-        <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderTop: `1px solid ${S.borderS}` }}>
+
+        {/* Footer Actions */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-border/80 bg-bg-raised/40">
           <div className="flex items-center gap-2">
-            {ti > 0 && <button onClick={() => setTab(TABS[ti - 1].key)} className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium" style={{ background: S.bgR, color: S.fgM }}><ChevronLeft size={12} />{TABS[ti - 1].label}</button>}
-            {ti < TABS.length - 1 && <button onClick={() => setTab(TABS[ti + 1].key)} className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium" style={{ background: S.bgR, color: S.fgM }}>{TABS[ti + 1].label}<ChevronRight size={12} /></button>}
+            {ti > 0 && (
+              <button
+                onClick={() => setTab(TABS[ti - 1].key)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-fg-muted hover:text-fg bg-surface border border-border hover:bg-surface-hover transition-colors"
+              >
+                <ChevronLeft size={14} />
+                {TABS[ti - 1].label}
+              </button>
+            )}
+            {ti < TABS.length - 1 && (
+              <button
+                onClick={() => setTab(TABS[ti + 1].key)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-fg-muted hover:text-fg bg-surface border border-border hover:bg-surface-hover transition-colors"
+              >
+                {TABS[ti + 1].label}
+                <ChevronRight size={14} />
+              </button>
+            )}
           </div>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 rounded text-[12px] font-medium" style={{ border: `1px solid ${S.border}`, color: S.fgM }}>Cancel</button>
-            <button onClick={handleSave} disabled={saving || !form.tag || !form.nodeId} className="px-3 py-1.5 rounded text-[12px] font-semibold disabled:opacity-50 flex items-center gap-1.5" style={{ background: S.fg, color: 'var(--bg)' }}>
-              {saving ? <><Loader2 size={12} className="animate-spin" /> Saving...</> : inbound ? 'Save Changes' : 'Create Inbound'}
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-semibold text-fg-muted hover:text-fg hover:bg-surface-hover transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !form.tag || !form.nodeId}
+              className="btn-primary px-5 py-2 rounded-xl text-xs font-bold disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {saving ? 'Saving...' : inbound ? 'Save Changes' : 'Create Inbound'}
             </button>
           </div>
         </div>
@@ -114,214 +234,756 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
 // ── Tab: General ──
 function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void; nodes: any[] }) {
   return (
-    <div className="space-y-4">
-      <Sec title="Target">
-        <div><Lbl>Node *</Lbl><Sel value={form.nodeId} onChange={(v) => update('nodeId', v)} opts={[['', 'Select node...'], ...nodes.map((n) => [n.id, `${n.name} (${n.host}) — ${n.status}`] as [string, string])]} /></div>
-      </Sec>
-      <Sec title="Protocol">
-        <div className="grid grid-cols-2 gap-3">
-          <div><Lbl>Protocol *</Lbl><Sel value={form.protocol} onChange={(v) => { update('protocol', v); update('tag', `${v.toLowerCase()}-inbound`); }} opts={PROTOCOLS.map(p => [p, p])} /></div>
-          <Fld label="Tag *" value={form.tag} onChange={(v) => update('tag', v)} placeholder="vless-inbound" />
+    <div className="space-y-6">
+      {/* Node Selection */}
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">1. Target Node</h3>
+        <div>
+          <label className="block text-xs font-medium text-fg-muted mb-1.5">Select Node *</label>
+          <select
+            className="input-base"
+            value={form.nodeId}
+            onChange={(e) => update('nodeId', e.target.value)}
+          >
+            <option value="">-- Choose target node --</option>
+            {nodes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name} ({n.host}) — [{n.status}]
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Fld label="Port *" value={form.port} onChange={(v) => update('port', +v)} type="number" />
-          <Fld label="Listen" value={form.listen} onChange={(v) => update('listen', v)} placeholder="0.0.0.0" />
+      </div>
+
+      {/* Protocol & Basic Info */}
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">2. Inbound Identification</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-fg-muted mb-1.5">Protocol *</label>
+            <select
+              className="input-base font-semibold text-accent"
+              value={form.protocol}
+              onChange={(e) => {
+                const proto = e.target.value as Protocol;
+                update('protocol', proto);
+                update('tag', `${proto.toLowerCase()}-inbound`);
+              }}
+            >
+              {PROTOCOLS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-fg-muted mb-1.5">Tag (Identifier) *</label>
+            <input
+              type="text"
+              className="input-base font-mono"
+              value={form.tag}
+              onChange={(e) => update('tag', e.target.value)}
+              placeholder="e.g. vless-reality-443"
+            />
+          </div>
         </div>
-        <Fld label="Remark" value={form.remark} onChange={(v) => update('remark', v)} placeholder="Optional description" />
-      </Sec>
-      <Sec title="Protocol Settings">
-        {['VLESS', 'VMESS'].includes(form.protocol) && <div className="grid grid-cols-2 gap-3">
-          <div><Lbl>UUID *</Lbl><div className="flex gap-1.5"><Inp className="flex-1" value={form.uuid} onChange={(v) => update('uuid', v)} placeholder="Auto-generated" /><GenBtn onClick={() => update('uuid', crypto.randomUUID())} /></div></div>
-          {form.protocol === 'VLESS' && <div><Lbl>Flow</Lbl><Sel value={form.flow} onChange={(v) => update('flow', v)} opts={FLOWS.map(f => [f, f || 'None (recommended)'])} /></div>}
-          {form.protocol === 'VMESS' && <Fld label="AlterID" value={form.alterId} onChange={(v) => update('alterId', +v)} type="number" />}
-        </div>}
-        {['TROJAN', 'SHADOWSOCKS', 'HYSTERIA2', 'MIERU'].includes(form.protocol) && <div><Lbl>Password *</Lbl><div className="flex gap-1.5"><Inp className="flex-1" value={form.password} onChange={(v) => update('password', v)} placeholder="Auto-generated" /><GenBtn onClick={() => update('password', crypto.randomUUID().replace(/-/g, '').substring(0, 16))} /></div></div>}
-        {form.protocol === 'SHADOWSOCKS' && <div><Lbl>Method</Lbl><Sel value={form.method} onChange={(v) => update('method', v)} opts={SS_METHODS.map(m => [m, m])} /></div>}
-        {form.protocol === 'HYSTERIA2' && <div className="grid grid-cols-2 gap-3"><Fld label="SNI" value={form.sni} onChange={(v) => update('sni', v)} placeholder="example.com" /><Fld label="Max Clients" value={form.hy2MaxClient} onChange={(v) => update('hy2MaxClient', +v)} type="number" /></div>}
-        {form.protocol === 'NAIVEPROXY' && <div className="grid grid-cols-2 gap-3"><Fld label="Proxy URL" value={form.naiveProxy} onChange={(v) => update('naiveProxy', v)} placeholder="https://proxy.example.com" /><div><Lbl>Protocol</Lbl><Sel value={form.naiveProto} onChange={(v) => update('naiveProto', v)} opts={[['quic', 'QUIC'], ['tcp', 'TCP']]} /></div></div>}
-        {form.protocol === 'MIERU' && <div><Lbl>Authentication</Lbl><Sel value={form.mieruAuth} onChange={(v) => update('mieruAuth', v)} opts={[['password', 'Password'], ['checksum', 'Checksum']]} /></div>}
-      </Sec>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-fg-muted mb-1.5">Port *</label>
+            <input
+              type="number"
+              className="input-base font-mono"
+              value={form.port}
+              onChange={(e) => update('port', parseInt(e.target.value) || 443)}
+              min={1}
+              max={65535}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-fg-muted mb-1.5">Listen Address</label>
+            <input
+              type="text"
+              className="input-base font-mono"
+              value={form.listen}
+              onChange={(e) => update('listen', e.target.value)}
+              placeholder="0.0.0.0"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-fg-muted mb-1.5">Remark (Optional note)</label>
+          <input
+            type="text"
+            className="input-base"
+            value={form.remark}
+            onChange={(e) => update('remark', e.target.value)}
+            placeholder="Main production entrypoint..."
+          />
+        </div>
+      </div>
+
+      {/* Protocol Specific Primary Settings */}
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">3. Credentials & Core Parameters</h3>
+
+        {['VLESS', 'VMESS'].includes(form.protocol) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">UUID *</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="input-base font-mono text-xs flex-1"
+                  value={form.uuid}
+                  onChange={(e) => update('uuid', e.target.value)}
+                  placeholder="Auto-generated UUID"
+                />
+                <button
+                  type="button"
+                  onClick={() => update('uuid', crypto.randomUUID())}
+                  className="px-3 py-2 rounded-xl bg-bg-raised border border-border text-xs font-bold text-fg-muted hover:text-fg hover:border-accent"
+                >
+                  Gen
+                </button>
+              </div>
+            </div>
+            {form.protocol === 'VLESS' && (
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1.5">Flow (XTLS-Vision)</label>
+                <select className="input-base" value={form.flow} onChange={(e) => update('flow', e.target.value as Flow)}>
+                  {FLOWS.map((f) => (
+                    <option key={f} value={f}>
+                      {f || 'None (Standard)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        {['TROJAN', 'SHADOWSOCKS', 'HYSTERIA2'].includes(form.protocol) && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">Password / Secret *</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="input-base font-mono text-xs flex-1"
+                  value={form.password}
+                  onChange={(e) => update('password', e.target.value)}
+                  placeholder="Security password"
+                />
+                <button
+                  type="button"
+                  onClick={() => update('password', crypto.randomUUID().replace(/-/g, '').substring(0, 16))}
+                  className="px-3 py-2 rounded-xl bg-bg-raised border border-border text-xs font-bold text-fg-muted hover:text-fg hover:border-accent"
+                >
+                  Gen
+                </button>
+              </div>
+            </div>
+
+            {form.protocol === 'SHADOWSOCKS' && (
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1.5">Encryption Method</label>
+                <select className="input-base" value={form.method} onChange={(e) => update('method', e.target.value)}>
+                  {SS_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {form.protocol === 'HYSTERIA2' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-fg-muted mb-1.5">Bandwidth Up/Down</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="input-base font-mono text-xs"
+                      value={form.hy2BandwidthUp}
+                      onChange={(e) => update('hy2BandwidthUp', e.target.value)}
+                      placeholder="100 mbps"
+                    />
+                    <input
+                      type="text"
+                      className="input-base font-mono text-xs"
+                      value={form.hy2BandwidthDown}
+                      onChange={(e) => update('hy2BandwidthDown', e.target.value)}
+                      placeholder="100 mbps"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-fg-muted mb-1.5">Obfuscation Type</label>
+                  <select className="input-base" value={form.hy2ObfsType} onChange={(e) => update('hy2ObfsType', e.target.value)}>
+                    <option value="none">None</option>
+                    <option value="salamander">Salamander (Recommended)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NaiveProxy Settings */}
+        {form.protocol === 'NAIVEPROXY' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1.5">Domain / SNI *</label>
+                <input
+                  type="text"
+                  className="input-base font-mono text-xs"
+                  value={form.sni}
+                  onChange={(e) => update('sni', e.target.value)}
+                  placeholder="proxy.example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1.5">TLS Certificate Mode</label>
+                <select
+                  className="input-base"
+                  value={form.naiveTlsMode}
+                  onChange={(e) => update('naiveTlsMode', e.target.value as any)}
+                >
+                  <option value="letsencrypt">Let's Encrypt (Automatic ACME)</option>
+                  <option value="custom">Custom Cert / Key Files</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">Camouflage / Fallback Root</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.naiveFallbackRoot}
+                onChange={(e) => update('naiveFallbackRoot', e.target.value)}
+                placeholder="/var/www/html"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Mieru Settings */}
+        {form.protocol === 'MIERU' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1.5">Transport Mode</label>
+                <select
+                  className="input-base font-semibold"
+                  value={form.mieruTransport}
+                  onChange={(e) => update('mieruTransport', e.target.value as any)}
+                >
+                  <option value="both">Both (TCP & UDP Dual Binding)</option>
+                  <option value="tcp">TCP Only</option>
+                  <option value="udp">UDP Only</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1.5">Logging Level</label>
+                <select
+                  className="input-base"
+                  value={form.mieruLoggingLevel}
+                  onChange={(e) => update('mieruLoggingLevel', e.target.value)}
+                >
+                  <option value="INFO">INFO</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="DEBUG">DEBUG</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Tab: Transport ──
 function TabTransport({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
-  if (!['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(form.protocol)) return <Empty msg={`${form.protocol} uses default transport settings`} />;
+  if (!['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(form.protocol)) {
+    return (
+      <div className="p-12 text-center rounded-2xl bg-surface border border-border text-fg-subtle text-xs">
+        {form.protocol} utilizes native protocol transport layer configuration.
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      <Sec title="Transport Layer">
-        <div><Lbl>Network *</Lbl><div className="grid grid-cols-4 gap-1.5">{TRANSPORTS.map((t) => <Btn key={t} active={form.transport === t} onClick={() => update('transport', t)}>{t.toUpperCase()}</Btn>)}</div></div>
-      </Sec>
-      {form.transport === 'ws' && <Sec title="WebSocket Settings"><div className="grid grid-cols-2 gap-3"><Fld label="Path" value={form.wsPath} onChange={(v) => update('wsPath', v)} placeholder="/" /><Fld label="Host (optional)" value={form.wsHost} onChange={(v) => update('wsHost', v)} placeholder="example.com" /></div><div className="grid grid-cols-2 gap-3"><Fld label="Max Early Data" value={form.wsMaxEarlyData} onChange={(v) => update('wsMaxEarlyData', +v)} type="number" /><Tgl label="Browser Forwarding Agent" value={form.wsUseBrowserAgent} onChange={(v) => update('wsUseBrowserAgent', v)} /></div></Sec>}
-      {form.transport === 'grpc' && <Sec title="gRPC Settings"><Fld label="Service Name" value={form.grpcServiceName} onChange={(v) => update('grpcServiceName', v)} placeholder="grpc-service" /><Tgl label="Multi-Mode" value={form.grpcMultiMode} onChange={(v) => update('grpcMultiMode', v)} /></Sec>}
-      {form.transport === 'h2' && <Sec title="HTTP/2 Settings"><div className="grid grid-cols-2 gap-3"><Fld label="Path" value={form.h2Path} onChange={(v) => update('h2Path', v)} placeholder="/" /><Fld label="Host" value={form.h2Host} onChange={(v) => update('h2Host', v)} placeholder="example.com" /></div><Fld label="Method" value={form.h2Method} onChange={(v) => update('h2Method', v)} placeholder="PUT" /></Sec>}
-      {form.transport === 'httpupgrade' && <Sec title="HTTPUpgrade Settings"><div className="grid grid-cols-2 gap-3"><Fld label="Path" value={form.httpupgradePath} onChange={(v) => update('httpupgradePath', v)} placeholder="/" /><Fld label="Host" value={form.httpupgradeHost} onChange={(v) => update('httpupgradeHost', v)} placeholder="example.com" /></div></Sec>}
-      {form.transport === 'xhttp' && <Sec title="XHTTP Settings"><div className="grid grid-cols-2 gap-3"><Fld label="Path" value={form.xhttpPath} onChange={(v) => update('xhttpPath', v)} /><div><Lbl>Mode</Lbl><Sel value={form.xhttpMode} onChange={(v) => update('xhttpMode', v)} opts={[['auto', 'auto'], ['packet-up', 'packet-up'], ['stream-up', 'stream-up']]} /></div></div></Sec>}
-      {form.transport === 'kcp' && <Sec title="mKCP Settings"><div className="grid grid-cols-2 gap-3"><div><Lbl>Header Type</Lbl><Sel value={form.kcpHeaderType} onChange={(v) => update('kcpHeaderType', v)} opts={KCP_HEADERS.map(h => [h, h])} /></div><Fld label="Seed" value={form.kcpSeed} onChange={(v) => update('kcpSeed', v)} placeholder="Optional seed" /></div></Sec>}
+    <div className="space-y-6">
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">Transport Protocol</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {TRANSPORTS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => update('transport', t)}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                form.transport === t
+                  ? 'bg-accent text-white shadow-md shadow-accent/25 border border-accent'
+                  : 'bg-bg-raised text-fg-muted border border-border hover:border-fg-subtle'
+              }`}
+            >
+              {t.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {form.transport === 'ws' && (
+        <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">WebSocket Parameters</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">WS Path</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.wsPath}
+                onChange={(e) => update('wsPath', e.target.value)}
+                placeholder="/ws"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">WS Host</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.wsHost}
+                onChange={(e) => update('wsHost', e.target.value)}
+                placeholder="example.com"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {form.transport === 'grpc' && (
+        <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">gRPC Parameters</h3>
+          <div>
+            <label className="block text-xs font-medium text-fg-muted mb-1.5">Service Name</label>
+            <input
+              type="text"
+              className="input-base font-mono text-xs"
+              value={form.grpcServiceName}
+              onChange={(e) => update('grpcServiceName', e.target.value)}
+              placeholder="grpc-service"
+            />
+          </div>
+        </div>
+      )}
+
+      {form.transport === 'xhttp' && (
+        <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">XHTTP Parameters</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">XHTTP Path</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.xhttpPath}
+                onChange={(e) => update('xhttpPath', e.target.value)}
+                placeholder="/xhttp"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">XHTTP Mode</label>
+              <select className="input-base" value={form.xhttpMode} onChange={(e) => update('xhttpMode', e.target.value)}>
+                <option value="auto">auto</option>
+                <option value="packet-up">packet-up</option>
+                <option value="stream-up">stream-up</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Tab: Security ──
 function TabSecurity({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
-  const [gen, setGen] = useState(false);
-  if (!['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(form.protocol)) return <Empty msg={`${form.protocol} uses default security`} />;
-  const genKeys = async () => { setGen(true); await new Promise(r => setTimeout(r, 500)); update('realityPublicKey', randomHex(32)); update('realityPrivateKey', randomHex(32)); update('realityShortId', randomHex(8).substring(0, 16)); setGen(false); };
+  const generateRealityKeys = () => {
+    const pk = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    const priv = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    const sid = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    update('realityPublicKey', pk);
+    update('realityPrivateKey', priv);
+    update('realityShortId', sid);
+  };
+
   return (
-    <div className="space-y-4">
-      <Sec title="Security Protocol"><div><Lbl>Security *</Lbl><div className="grid grid-cols-3 gap-1.5">{SECURITY_OPTIONS.map((s) => <Btn key={s.value} active={form.security === s.value} onClick={() => update('security', s.value)}><div>{s.label}</div><div className="text-[9px] opacity-60 mt-0.5">{s.desc}</div></Btn>)}</div></div></Sec>
-      {form.security === 'reality' && <Sec title="Reality Settings" accent>
-        <button onClick={genKeys} disabled={gen} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50" style={{ background: 'var(--accent-muted)', color: 'var(--accent)' }}>{gen ? <Loader2 size={12} className="animate-spin" /> : null}{gen ? 'Generating...' : 'Generate x25519 Key Pair + ShortId'}</button>
-        <div className="grid grid-cols-2 gap-3"><Fld label="SNI *" value={form.sni} onChange={(v) => { update('sni', v); update('realityServerNames', v); }} placeholder="www.microsoft.com" /><div><Lbl>Fingerprint *</Lbl><Sel value={form.fingerprint} onChange={(v) => update('fingerprint', v)} opts={FINGERPRINTS.map(f => [f, f])} /></div></div>
-        <div className="grid grid-cols-2 gap-3"><Fld label="Public Key *" value={form.realityPublicKey} onChange={(v) => update('realityPublicKey', v)} placeholder="x25519 public key" /><Fld label="Short ID *" value={form.realityShortId} onChange={(v) => update('realityShortId', v)} placeholder="hex string" /></div>
-        <div className="grid grid-cols-2 gap-3"><Fld label="SpiderX" value={form.realitySpiderX} onChange={(v) => update('realitySpiderX', v)} placeholder="path obfuscation" /><Fld label="Dest" value={form.realityDest} onChange={(v) => update('realityDest', v)} placeholder="www.microsoft.com:443" /></div>
-        <Fld label="Server Names (comma-separated)" value={form.realityServerNames} onChange={(v) => update('realityServerNames', v)} placeholder="www.microsoft.com" />
-        {form.realityPrivateKey && <div className="p-3 rounded" style={{ background: 'var(--warning-muted)', border: '1px solid var(--warning)' }}><div className="text-[10px] font-medium mb-1" style={{ color: 'var(--warning)' }}>Private Key (save securely!)</div><code className="text-[11px] font-mono break-all" style={{ color: 'var(--fg)' }}>{form.realityPrivateKey}</code></div>}
-      </Sec>}
-      {form.security === 'tls' && <Sec title="TLS Settings" accent>
-        <div className="grid grid-cols-2 gap-3"><Fld label="SNI" value={form.sni} onChange={(v) => update('sni', v)} placeholder="example.com" /><div><Lbl>Fingerprint</Lbl><Sel value={form.fingerprint} onChange={(v) => update('fingerprint', v)} opts={FINGERPRINTS.map(f => [f, f])} /></div></div>
-        <div className="grid grid-cols-2 gap-3"><Fld label="ALPN" value={form.alpn} onChange={(v) => update('alpn', v)} placeholder="h2,http/1.1" /><Tgl label="Allow Insecure" value={form.allowInsecure} onChange={(v) => update('allowInsecure', v)} /></div>
-        <div className="grid grid-cols-2 gap-3"><div><Lbl>Min TLS Version</Lbl><Sel value={form.minVersion} onChange={(v) => update('minVersion', v)} opts={TLS_VERSIONS.map(v => [v, v])} /></div><div><Lbl>Max TLS Version</Lbl><Sel value={form.maxVersion} onChange={(v) => update('maxVersion', v)} opts={TLS_VERSIONS.map(v => [v, v])} /></div></div>
-        <Fld label="Custom Certificates (PEM)" value={form.certificates} onChange={(v) => update('certificates', v)} placeholder="Optional: paste cert+key PEM" />
-      </Sec>}
-      {form.security === 'none' && <Sec title="No Encryption" accent><div className="p-3 rounded text-[11px]" style={{ background: 'var(--warning-muted)', color: 'var(--warning)', border: '1px solid var(--warning)' }}>No encryption will be applied. Traffic will be transmitted in plaintext.</div></Sec>}
+    <div className="space-y-6">
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">Security & Encryption Layer</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {(['reality', 'tls', 'none'] as Security[]).map((sec) => (
+            <button
+              key={sec}
+              type="button"
+              onClick={() => update('security', sec)}
+              className={`p-3.5 rounded-xl text-left border transition-all ${
+                form.security === sec
+                  ? 'bg-accent/10 border-accent text-accent shadow-sm'
+                  : 'bg-bg-raised border-border text-fg-muted hover:border-fg-subtle'
+              }`}
+            >
+              <div className="text-xs font-bold uppercase">{sec}</div>
+              <div className="text-[10px] text-fg-subtle mt-0.5">
+                {sec === 'reality' ? 'Anti-DPI (Camouflage)' : sec === 'tls' ? 'Standard TLS Certificate' : 'Plaintext'}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {form.security === 'reality' && (
+        <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Reality Anti-DPI Settings</h3>
+            <button
+              type="button"
+              onClick={generateRealityKeys}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent-muted text-accent border border-accent/30 text-xs font-bold hover:bg-accent hover:text-white transition-all shadow-sm"
+            >
+              <KeyRound size={13} /> Generate Keypair
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">SNI (Target Server Name) *</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.sni}
+                onChange={(e) => {
+                  update('sni', e.target.value);
+                  update('realityServerNames', e.target.value);
+                }}
+                placeholder="www.microsoft.com"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">Client Fingerprint</label>
+              <select
+                className="input-base"
+                value={form.fingerprint}
+                onChange={(e) => update('fingerprint', e.target.value as Fingerprint)}
+              >
+                {FINGERPRINTS.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">Public Key *</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.realityPublicKey}
+                onChange={(e) => update('realityPublicKey', e.target.value)}
+                placeholder="x25519 public key"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">Short ID *</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.realityShortId}
+                onChange={(e) => update('realityShortId', e.target.value)}
+                placeholder="e.g. 0123456789abcdef"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">Dest (Target Handshake Server)</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.realityDest}
+                onChange={(e) => update('realityDest', e.target.value)}
+                placeholder="www.microsoft.com:443"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-fg-muted mb-1.5">SpiderX Path</label>
+              <input
+                type="text"
+                className="input-base font-mono text-xs"
+                value={form.realitySpiderX}
+                onChange={(e) => update('realitySpiderX', e.target.value)}
+                placeholder="/"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Tab: Sniffing ──
 function TabSniffing({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
-  if (!['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(form.protocol)) return <Empty msg={`${form.protocol} does not use sniffing`} />;
-  const toggle = (d: string) => { const c = form.sniffingDestOverride || []; update('sniffingDestOverride', c.includes(d) ? c.filter(x => x !== d) : [...c, d]); };
+  const toggleDest = (d: string) => {
+    const current = form.sniffingDestOverride || [];
+    update('sniffingDestOverride', current.includes(d) ? current.filter((x) => x !== d) : [...current, d]);
+  };
+
   return (
-    <div className="space-y-4">
-      <Sec title="Protocol Detection">
-        <Tgl label="Enable Sniffing" value={form.sniffing} onChange={(v) => update('sniffing', v)} />
-        <div><Lbl>Dest Override</Lbl><div className="flex flex-wrap gap-1.5">{SNIFFING_DESTS.map((d) => <Btn key={d} active={form.sniffingDestOverride?.includes(d)} onClick={() => toggle(d)}>{d}</Btn>)}</div></div>
-      </Sec>
-      <Sec title="Options">
-        <Tgl label="Metadata Only" value={form.sniffingMetadataOnly} onChange={(v) => update('sniffingMetadataOnly', v)} />
-        <Tgl label="Route Only" value={form.sniffingRouteOnly} onChange={(v) => update('sniffingRouteOnly', v)} />
-      </Sec>
-      <Sec title="Exclusions">
-        <TagInp label="Excluded Domains" value={form.sniffingExcludedDomains} onChange={(v) => update('sniffingExcludedDomains', v)} placeholder="*.example.com" />
-        <TagInp label="Excluded IPs / CIDR" value={form.sniffingExcludedIPs} onChange={(v) => update('sniffingExcludedIPs', v)} placeholder="10.0.0.0/8" />
-      </Sec>
+    <div className="space-y-6">
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-fg">Traffic Sniffing</h3>
+            <p className="text-xs text-fg-subtle">Inspect domain and protocol for granular routing</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => update('sniffing', !form.sniffing)}
+            className={`w-11 h-6 rounded-full transition-colors relative ${form.sniffing ? 'bg-accent' : 'bg-bg-sunken border border-border'}`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                form.sniffing ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+
+        {form.sniffing && (
+          <div>
+            <label className="block text-xs font-medium text-fg-muted mb-2">Protocol Interception</label>
+            <div className="flex flex-wrap gap-2">
+              {SNIFFING_DESTS.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => toggleDest(d)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
+                    form.sniffingDestOverride?.includes(d)
+                      ? 'bg-accent/20 border border-accent text-accent'
+                      : 'bg-bg-raised border border-border text-fg-muted hover:border-fg-subtle'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Tab: Advanced JSON ──
-function TabAdvancedJSON({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
-  const [json, setJson] = useState(() => JSON.stringify(formToRawJson(form), null, 2));
-  const [err, setErr] = useState('');
-  const handleChange = (v: string) => { setJson(v); try { const p = JSON.parse(v); if (p.settings) Object.entries(p.settings).forEach(([k, val]) => update(k as any, val)); setErr(''); } catch { setErr('Invalid JSON'); } };
+function TabAdvancedJSON({ form }: { form: InboundForm }) {
+  const jsonStr = JSON.stringify(form, null, 2);
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between"><span className="text-xs" style={{ color: S.fgM }}>Raw Inbound Configuration (JSON)</span><button onClick={() => { setJson(JSON.stringify(formToRawJson(form), null, 2)); setErr(''); }} className="px-2.5 py-1 rounded text-[11px] font-medium" style={{ border: `1px solid ${S.border}`, color: S.fgM }}>Sync from Form</button></div>
-      {err && <div className="text-[11px] px-3 py-1.5 rounded" style={{ background: 'var(--danger-muted)', color: 'var(--danger)' }}>{err}</div>}
-      <textarea value={json} onChange={(e) => handleChange(e.target.value)} className="w-full h-[400px] px-3 py-2 rounded font-mono text-[11px] focus:outline-none resize-none" style={{ ...S.input, border: err ? '1px solid var(--danger)' : `1px solid ${S.border}` }} spellCheck={false} />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">Inbound Form State (JSON)</h3>
+      </div>
+      <pre className="p-4 rounded-xl bg-bg-sunken border border-border text-xs font-mono text-fg-muted overflow-x-auto max-h-[350px]">
+        {jsonStr}
+      </pre>
     </div>
   );
 }
 
-// ── Tab: Port-Sharing ──
+// ── Tab: Port Sharing ──
 function TabPortShare({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
-  const add = () => update('portShares', [...(form.portShares || []), { protocol: 'VLESS' as Protocol, tag: `ps-${Date.now()}`, host: '', path: '', enable: true }]);
-  const upd = (i: number, k: string, v: any) => { const s = [...(form.portShares || [])]; (s[i] as any)[k] = v; update('portShares', s); };
-  const rm = (i: number) => update('portShares', (form.portShares || []).filter((_, idx) => idx !== i));
+  const addShare = () => {
+    update('portShares', [
+      ...(form.portShares || []),
+      { protocol: 'VLESS' as Protocol, tag: `ps-${Date.now()}`, host: '', path: '', enable: true },
+    ]);
+  };
+
+  const removeShare = (idx: number) => {
+    update('portShares', (form.portShares || []).filter((_, i) => i !== idx));
+  };
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between"><span className="text-xs font-medium" style={{ color: S.fg }}>Port Shares <span style={{ color: S.fgS }}>({(form.portShares || []).length})</span></span><button onClick={add} className="px-2.5 py-1 rounded text-[11px] font-medium" style={{ background: 'var(--accent-muted)', color: 'var(--accent)' }}>+ Add</button></div>
-      {(form.portShares || []).length === 0 ? <div className="p-8 rounded text-center text-xs" style={{ background: S.bgR, border: `1px solid ${S.borderS}`, color: S.fgS }}>No port shares. Add one to multiplex this inbound on the shared port.</div> : <div className="space-y-2">{(form.portShares || []).map((ps, i) => (
-        <div key={i} className="p-3 rounded space-y-2" style={{ background: S.bgR, border: `1px solid ${S.border}` }}>
-          <div className="flex items-center gap-2">
-            <select className="w-28 px-2 py-1.5 rounded text-[11px]" style={S.input} value={ps.protocol} onChange={(e) => upd(i, 'protocol', e.target.value)}>{PROTOCOLS.map(p => <option key={p}>{p}</option>)}</select>
-            <input className="flex-1 px-2 py-1.5 rounded text-[11px]" style={S.input} value={ps.tag} onChange={(e) => upd(i, 'tag', e.target.value)} placeholder="Tag" />
-            <button onClick={() => rm(i)} className="p-1 rounded" style={{ color: S.fgS }}>×</button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input className="px-2 py-1.5 rounded text-[11px]" style={S.input} value={ps.host} onChange={(e) => upd(i, 'host', e.target.value)} placeholder="SNI host" />
-            <input className="px-2 py-1.5 rounded text-[11px]" style={S.input} value={ps.path} onChange={(e) => upd(i, 'path', e.target.value)} placeholder="Path (gRPC/WS)" />
-          </div>
-        </div>))}</div>}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">SNI / Fallback Port Shares</h3>
+        <button
+          type="button"
+          onClick={addShare}
+          className="px-3 py-1.5 rounded-xl bg-accent-muted text-accent border border-accent/20 text-xs font-bold hover:bg-accent hover:text-white transition-colors"
+        >
+          + Add Port Share
+        </button>
+      </div>
+
+      {(form.portShares || []).length === 0 ? (
+        <div className="p-8 text-center rounded-xl bg-surface border border-border text-xs text-fg-subtle">
+          No port sharing configured. All traffic on port {form.port} will route directly to this inbound.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {form.portShares.map((ps, idx) => (
+            <div key={idx} className="p-3.5 rounded-xl bg-surface border border-border space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <input
+                  type="text"
+                  className="input-base font-mono text-xs flex-1"
+                  value={ps.tag}
+                  onChange={(e) => {
+                    const shares = [...form.portShares];
+                    shares[idx].tag = e.target.value;
+                    update('portShares', shares);
+                  }}
+                  placeholder="Share tag"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeShare(idx)}
+                  className="p-1.5 rounded-lg text-danger hover:bg-danger-muted/30"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Shared primitives ──
-function Sec({ title, accent, children }: { title: string; accent?: boolean; children: React.ReactNode }) {
-  return <div className="space-y-2.5"><h3 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: accent ? 'var(--accent)' : 'var(--fg-subtle)' }}>{title}</h3><div className="space-y-2.5">{children}</div></div>;
-}
-function Lbl({ children }: { children: React.ReactNode }) { return <label style={S.label}>{children}</label>; }
-function Fld({ label, value, onChange, type = 'text', placeholder }: { label: string; value: any; onChange: (v: any) => void; type?: string; placeholder?: string }) {
-  return <div><Lbl>{label}</Lbl><Inp value={value} onChange={onChange} type={type} placeholder={placeholder} /></div>;
-}
-function Inp({ value, onChange, type = 'text', placeholder, className }: { value: any; onChange: (v: any) => void; type?: string; placeholder?: string; className?: string }) {
-  return <input className={cn("w-full px-2.5 py-1.5 rounded text-[13px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]", className)} style={S.input} type={type} value={value} onChange={(e) => onChange(type === 'number' ? +e.target.value : e.target.value)} placeholder={placeholder} />;
-}
-function Sel({ value, onChange, opts }: { value: string; onChange: (v: string) => void; opts: [string, string][] }) {
-  return <select className="w-full px-2.5 py-1.5 rounded text-[13px] focus:outline-none" style={S.input} value={value} onChange={(e) => onChange(e.target.value)}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
-}
-function Tgl({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return <div className="flex items-center justify-between px-3 py-2.5 rounded" style={{ background: S.bgR, border: `1px solid ${S.borderS}` }}>
-    <span className="text-xs" style={{ color: S.fg }}>{label}</span>
-    <button onClick={() => onChange(!value)} className="relative w-9 h-5 rounded-full transition-colors" style={{ background: value ? 'var(--accent)' : 'var(--fg-subtle)' }}>
-      <div className="absolute top-0.5 w-4 h-4 rounded-full bg-surface shadow-sm transition-transform" style={{ transform: value ? 'translateX(18px)' : 'translateX(2px)' }} />
-    </button>
-  </div>;
-}
-function TagInp({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
-  const [inp, setInp] = useState('');
-  const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : [];
-  const add = () => { if (inp.trim() && !tags.includes(inp.trim())) { onChange([...tags, inp.trim()].join(', ')); setInp(''); } };
-  const rm = (t: string) => onChange(tags.filter(x => x !== t).join(', '));
-  return <div><Lbl>{label}</Lbl><div className="flex flex-wrap gap-1.5 mb-1.5">{tags.map(t => <span key={t} className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]" style={{ background: S.bgR, color: S.fgM }}>{t}<button onClick={() => rm(t)} style={{ color: S.fgS }}>×</button></span>)}</div><div className="flex gap-1.5"><Inp className="flex-1" value={inp} onChange={setInp} placeholder={placeholder} /><button onClick={add} className="px-2.5 rounded text-[11px]" style={{ border: `1px solid ${S.border}`, color: S.fgM }}>+</button></div></div>;
-}
-function GenBtn({ onClick }: { onClick: () => void }) { return <button onClick={onClick} className="px-2.5 rounded text-[11px] font-medium shrink-0" style={{ background: S.bgR, border: `1px solid ${S.border}`, color: S.fgM }}>Gen</button>; }
-function Empty({ msg }: { msg: string }) { return <div className="text-center py-12 text-sm" style={{ color: S.fgS }}>{msg}</div>; }
-
-// ── Constants ──
-const PROTOCOLS: Protocol[] = ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS', 'HYSTERIA2', 'NAIVEPROXY', 'MIERU', 'TUIC'];
-const TRANSPORTS: Transport[] = ['tcp', 'ws', 'grpc', 'httpupgrade', 'xhttp', 'h2', 'kcp'];
-const SECURITY_OPTIONS = [{ value: 'none', label: 'None', desc: 'No encryption' }, { value: 'tls', label: 'TLS', desc: 'Standard TLS' }, { value: 'reality', label: 'Reality', desc: 'Anti-DPI' }];
-const FINGERPRINTS: Fingerprint[] = ['chrome', 'firefox', 'safari', 'edge', 'random', 'randomized', 'hello', 'zerossl'];
-const FLOWS: Flow[] = ['', 'xtls-rprx-vision', 'xtls-rprx-direct', 'xtls-rprx-splice'];
-const TLS_VERSIONS = ['1.0', '1.1', '1.2', '1.3'];
-const SS_METHODS = ['aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305', '2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305'];
-const KCP_HEADERS = ['none', 'srtp', 'utp', 'wechat-video', 'dtls', 'wireguard'];
-const SNIFFING_DESTS = ['http', 'tls', 'quic', 'stun', 'dns', 'bittorrent'];
-
-// ── Helpers ──
-function protocolColor(p: string): string {
-  const m: Record<string, string> = { VLESS: 'bg-blue-50 text-blue-600 border-blue-200', VMESS: 'bg-cyan-50 text-cyan-600 border-cyan-200', TROJAN: 'bg-rose-50 text-rose-600 border-rose-200', HYSTERIA2: 'bg-orange-50 text-orange-600 border-orange-200', NAIVEPROXY: 'bg-emerald-50 text-emerald-600 border-emerald-200', MIERU: 'bg-indigo-50 text-indigo-600 border-indigo-200', TUIC: 'bg-pink-50 text-pink-600 border-pink-200' };
-  return m[p] || 'bg-bg-raised text-fg-muted border-border';
-}
-function randomHex(n: number): string { const b = new Uint8Array(n); crypto.getRandomValues(b); return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(''); }
 function defaultForm(): InboundForm {
-  return { nodeId: '', protocol: 'VLESS', tag: 'vless-inbound', port: 443, listen: '0.0.0.0', enable: true, remark: '', sniffing: true, security: 'reality', uuid: '', password: '', flow: 'xtls-rprx-vision', method: 'aes-256-gcm', alterId: 0, transport: 'tcp', sni: 'www.microsoft.com', fingerprint: 'chrome', alpn: 'h2,http/1.1', allowInsecure: false, minVersion: '1.2', maxVersion: '1.3', realityPublicKey: '', realityPrivateKey: '', realityShortId: '', realitySpiderX: '', realityDest: 'www.microsoft.com:443', realityServerNames: 'www.microsoft.com', wsPath: '/', wsHost: '', wsMaxEarlyData: 0, wsUseBrowserAgent: false, grpcServiceName: '', grpcMultiMode: false, h2Path: '/', h2Host: '', h2Method: 'PUT', httpupgradePath: '/', httpupgradeHost: '', xhttpPath: '', xhttpMode: 'auto', kcpHeaderType: 'none', kcpSeed: '', certificates: '', sniffingDestOverride: ['http', 'tls'], sniffingMetadataOnly: false, sniffingRouteOnly: false, sniffingExcludedDomains: '', sniffingExcludedIPs: '', naiveProxy: '', naiveProto: 'quic', naiveNonce: '', naivePadding: true, naivePaddingLength: 512, naivePaddingMode: 'random', mieruAuth: 'password', mieruSessionPlacement: 'random', mieruSequencePlacement: 'random', mieruBufferReadSize: 16384, mieruBufferWriteSize: 16384, hy2ObfsType: 'none', hy2ObfsPassword: '', hy2BandwidthUp: '100 mbps', hy2BandwidthDown: '100 mbps', hy2MaxClient: 16, hy2MaxStream: 1024, routingBlockTorrent: false, routingBlockAds: false, portShares: [] };
+  return {
+    nodeId: '',
+    protocol: 'VLESS',
+    tag: 'vless-reality-443',
+    port: 443,
+    listen: '0.0.0.0',
+    enable: true,
+    remark: '',
+    sniffing: true,
+    security: 'reality',
+    uuid: crypto.randomUUID(),
+    password: crypto.randomUUID().replace(/-/g, '').substring(0, 16),
+    flow: 'xtls-rprx-vision',
+    method: 'aes-256-gcm',
+    alterId: 0,
+    transport: 'tcp',
+    sni: 'www.microsoft.com',
+    fingerprint: 'chrome',
+    alpn: 'h2,http/1.1',
+    allowInsecure: false,
+    minVersion: '1.2',
+    maxVersion: '1.3',
+    realityPublicKey: '',
+    realityPrivateKey: '',
+    realityShortId: '0123456789abcdef',
+    realitySpiderX: '/',
+    realityDest: 'www.microsoft.com:443',
+    realityServerNames: 'www.microsoft.com',
+    wsPath: '/',
+    wsHost: '',
+    wsMaxEarlyData: 0,
+    wsUseBrowserAgent: false,
+    grpcServiceName: '',
+    grpcMultiMode: false,
+    h2Path: '/',
+    h2Host: '',
+    h2Method: 'PUT',
+    httpupgradePath: '/',
+    httpupgradeHost: '',
+    xhttpPath: '',
+    xhttpMode: 'auto',
+    kcpHeaderType: 'none',
+    kcpSeed: '',
+    certificates: '',
+    sniffingDestOverride: ['http', 'tls'],
+    sniffingMetadataOnly: false,
+    sniffingRouteOnly: false,
+    sniffingExcludedDomains: '',
+    sniffingExcludedIPs: '',
+    naiveDomain: '',
+    naiveEmail: '',
+    naiveTlsMode: 'letsencrypt',
+    naiveCertFile: '',
+    naiveKeyFile: '',
+    naiveFallbackRoot: '/var/www/html',
+    naiveWarpUpstream: '',
+    naiveHideIp: true,
+    naiveHideVia: true,
+    naiveProbeResistance: true,
+    mieruTransport: 'both',
+    mieruLoggingLevel: 'INFO',
+    mieruPortRange: '',
+    hy2ObfsType: 'none',
+    hy2ObfsPassword: '',
+    hy2BandwidthUp: '100 mbps',
+    hy2BandwidthDown: '100 mbps',
+    hy2MaxClient: 16,
+    hy2MaxStream: 1024,
+    routingBlockTorrent: false,
+    routingBlockAds: false,
+    portShares: [],
+  };
 }
+
 function inboundToForm(ib: Inbound): InboundForm {
-  const s = ib.settings as any, st = ib.stream as any, r = ib.routing as any, f = defaultForm();
+  const s = (ib.settings as any) || {};
+  const st = (ib.stream as any) || {};
+  const r = (ib.routing as any) || {};
+  const f = defaultForm();
+
   return {
     ...f,
-    id: ib.id, nodeId: ib.nodeId, protocol: ib.protocol as Protocol, tag: ib.tag, port: ib.port, listen: ib.listen, enable: ib.enable, remark: ib.remark || '',
+    id: ib.id,
+    nodeId: ib.nodeId,
+    protocol: ib.protocol as Protocol,
+    tag: ib.tag,
+    port: ib.port,
+    listen: ib.listen || '0.0.0.0',
+    enable: ib.enable,
+    remark: ib.remark || '',
     sniffing: ib.sniffing,
     security: (st?.security || 'none') as Security,
-    uuid: s?.id || '',
-    password: s?.password || '',
+    uuid: s?.id || f.uuid,
+    password: s?.password || f.password,
     flow: s?.flow || '',
     method: s?.method || f.method,
     alterId: s?.alterId ?? 0,
     transport: (st?.network || 'tcp') as Transport,
-    sni: st?.sni || '',
+    sni: st?.sni || s?.domain || '',
     fingerprint: st?.fingerprint || 'chrome',
-    alpn: Array.isArray(st?.alpn) ? st.alpn.join(',') : (st?.alpn || ''),
+    alpn: Array.isArray(st?.alpn) ? st.alpn.join(',') : st?.alpn || '',
     allowInsecure: st?.allowInsecure ?? false,
-    minVersion: st?.minVersion || f.minVersion,
-    maxVersion: st?.maxVersion || f.maxVersion,
-    certificates: st?.certificates || '',
     realityPublicKey: st?.publicKey || '',
     realityPrivateKey: st?.privateKey || '',
     realityShortId: st?.shortId || '',
@@ -330,59 +992,10 @@ function inboundToForm(ib: Inbound): InboundForm {
     realityServerNames: st?.serverNames?.join(', ') || st?.sni || '',
     wsPath: st?.wsSettings?.path || st?.path || '/',
     wsHost: st?.wsSettings?.host || st?.host || '',
-    wsMaxEarlyData: st?.wsSettings?.maxEarlyData ?? 0,
     grpcServiceName: st?.grpcSettings?.serviceName || '',
-    grpcMultiMode: st?.grpcSettings?.multiMode ?? false,
-    h2Path: st?.httpSettings?.path || '/',
-    h2Host: Array.isArray(st?.httpSettings?.host) ? st.httpSettings.host[0] : (st?.httpSettings?.host || ''),
-    h2Method: st?.httpSettings?.method || 'PUT',
-    httpupgradePath: st?.httpupgradeSettings?.path || '/',
-    httpupgradeHost: st?.httpupgradeSettings?.host || '',
     xhttpPath: st?.xhttpSettings?.path || '',
     xhttpMode: st?.xhttpSettings?.mode || 'auto',
-    kcpHeaderType: st?.kcpSettings?.header?.type || 'none',
-    kcpSeed: st?.kcpSettings?.seed || '',
     routingBlockTorrent: r?.blockTorrent ?? false,
     routingBlockAds: r?.blockAds ?? false,
   };
-}
-function formToRawJson(f: InboundForm): any {
-  const isXray = ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(f.protocol);
-  const result: any = { protocol: f.protocol, tag: f.tag, port: f.port, listen: f.listen, enable: f.enable };
-
-  if (f.protocol === 'VLESS') {
-    result.settings = { id: f.uuid, flow: f.flow };
-    result.stream = { security: f.security || 'none', network: f.transport, sni: f.sni, fingerprint: f.fingerprint };
-    if (f.security === 'reality') {
-      result.stream.publicKey = f.realityPublicKey;
-      result.stream.shortId = f.realityShortId;
-      result.stream.spiderX = f.realitySpiderX;
-      result.stream.dest = f.realityDest;
-    }
-  } else if (f.protocol === 'VMESS') {
-    result.settings = { id: f.uuid, alterId: f.alterId };
-    result.stream = { security: f.security || 'none', network: f.transport, sni: f.sni, fingerprint: f.fingerprint };
-  } else if (f.protocol === 'TROJAN') {
-    result.settings = { password: f.password };
-    result.stream = { security: f.security || 'none', network: f.transport, sni: f.sni };
-  } else if (f.protocol === 'SHADOWSOCKS') {
-    result.settings = { method: f.method, password: f.password };
-  } else if (f.protocol === 'HYSTERIA2') {
-    result.settings = { password: f.password, sni: f.sni };
-  } else if (f.protocol === 'NAIVEPROXY') {
-    result.settings = { username: 'user', password: f.password, domain: f.sni || '' };
-    result.tls = { server_name: f.sni || '' };
-  } else if (f.protocol === 'MIERU') {
-    result.settings = { username: 'user', password: f.password, transport: 'tcp', multiplexing: 'MULTIPLEXING_HIGH' };
-  } else if (f.protocol === 'TUIC') {
-    result.settings = { password: f.password, sni: f.sni };
-  } else {
-    result.settings = { password: f.password };
-  }
-
-  if (isXray) {
-    result.sniffing = { enabled: f.sniffing, destOverride: f.sniffingDestOverride };
-  }
-
-  return result;
 }

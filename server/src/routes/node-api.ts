@@ -19,13 +19,15 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const prisma = getPrisma();
+    const effectiveHost = (host && host !== '0.0.0.0' && host !== '::') ? host : (req.ip || '127.0.0.1');
+    const effectiveName = name || `node-${Date.now()}`;
 
-    // Check if node already registered by name or host
+    // Check if node already registered by secret token or specific name
     const existing = await prisma.node.findFirst({
       where: {
         OR: [
-          { name: name || '' },
-          { host: host || req.ip },
+          { secret: token },
+          ...(name ? [{ name }] : []),
         ],
       },
     });
@@ -36,7 +38,7 @@ router.post('/register', async (req: Request, res: Response) => {
         where: { id: existing.id },
         data: {
           name: name || existing.name,
-          host: host || req.ip,
+          host: effectiveHost || existing.host,
           port: port || existing.port,
           apiPort: apiPort || existing.apiPort,
           status: 'ONLINE',
@@ -56,8 +58,8 @@ router.post('/register', async (req: Request, res: Response) => {
     // Create new node
     const node = await prisma.node.create({
       data: {
-        name: name || `node-${Date.now()}`,
-        host: host || req.ip || '0.0.0.0',
+        name: effectiveName,
+        host: effectiveHost,
         port: port || 443,
         apiPort: apiPort || 2087,
         secret: token,

@@ -45,7 +45,13 @@ export async function closePrisma(): Promise<void> {
 }
 
 export function serializeBigInt(obj: any): any {
-  return JSON.parse(JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? Number(v) : v)));
+  const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+  const MIN_SAFE = BigInt(Number.MIN_SAFE_INTEGER);
+  return JSON.parse(
+    JSON.stringify(obj, (_, v) =>
+      typeof v === 'bigint' ? (v <= MAX_SAFE && v >= MIN_SAFE ? Number(v) : v.toString()) : v
+    )
+  );
 }
 
 /**

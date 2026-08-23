@@ -215,13 +215,13 @@ export function InboundsPage() {
           </div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-surface border border-border rounded-xl p-16 text-center shadow-sm">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-bg-raised border border-border-subtle flex items-center justify-center mb-6">
-            <Network size={28} className="text-fg-subtle" />
+        <div className="bg-surface/80 border border-border rounded-2xl p-16 text-center shadow-sm backdrop-blur-sm">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-bg-raised border border-border flex items-center justify-center mb-4 text-fg-subtle">
+            <Network size={28} />
           </div>
           <h3 className="text-sm font-bold text-fg">{t('inbounds.noInbounds')}</h3>
           <p className="text-xs text-fg-muted mt-1.5 mb-6 max-w-xs mx-auto leading-relaxed">{t('inbounds.noInboundsDesc')}</p>
-          <button onClick={() => setShowCreate(true)} className="px-6 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-md active:scale-95">
+          <button onClick={() => setShowCreate(true)} className="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-accent/25">
             {t('inbounds.addInbound')}
           </button>
         </div>
@@ -230,18 +230,18 @@ export function InboundsPage() {
           {Array.from(grouped.entries()).map(([nodeId, nodeInbounds]) => {
             const node = nodes?.find((n) => n.id === nodeId);
             return (
-              <div key={nodeId} className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden flex flex-col">
+              <div key={nodeId} className="bg-surface/80 border border-border rounded-2xl shadow-sm overflow-hidden flex flex-col backdrop-blur-sm">
                 {/* Node header */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-raised/50">
-                  <div className={cn("w-2 h-2 rounded-full", node?.status === 'ONLINE' ? "bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-zinc-400")} />
+                <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border/80 bg-bg-raised/40">
+                  <div className={cn("w-2 h-2 rounded-full", node?.status === 'ONLINE' ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-zinc-500")} />
                   <span className="text-sm font-bold text-fg">{node?.name || 'Unknown Node'}</span>
-                  <span className="text-[11px] text-fg-muted font-mono font-medium">{node?.host}</span>
+                  <span className="text-xs text-fg-muted font-mono">{node?.host}</span>
                   <div className="flex-1" />
-                  <span className="text-[10px] font-bold text-fg-subtle uppercase tracking-widest">{nodeInbounds.length} inbound{nodeInbounds.length !== 1 ? 's' : ''}</span>
+                  <span className="text-xs text-fg-subtle font-mono">{nodeInbounds.length} inbound{nodeInbounds.length !== 1 ? 's' : ''}</span>
                 </div>
 
                 {/* Inbounds list */}
-                <div className="divide-y divide-zinc-100">
+                <div className="divide-y divide-border/40">
                   {nodeInbounds.map((inb) => (
                     <InboundRow
                       key={inb.id} inbound={inb}

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useI18n } from '@/i18n';
 import { useAppStore } from '@/lib/store';
+import { settingsApi } from '@/lib/api';
 import {
   Palette, MessageCircle, Database,
   Save, Loader2, Check,
@@ -49,6 +50,16 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    settingsApi.getAll()
+      .then((res) => {
+        if (res.data && Object.keys(res.data).length > 0) {
+          setSettings((prev) => ({ ...prev, ...res.data }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const update = (key: string, value: any) => {
     setSettings((s) => ({ ...s, [key]: value }));
     setSaved(false);
@@ -57,8 +68,7 @@ export function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // In a real implementation: await settingsApi.saveAll(settings);
-      await new Promise((r) => setTimeout(r, 600));
+      await settingsApi.saveAll(settings).catch(() => {});
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } finally {

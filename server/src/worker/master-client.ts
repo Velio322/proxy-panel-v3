@@ -21,6 +21,7 @@ export class MasterClient {
   private statusTimer: NodeJS.Timeout | null = null;
   private lastConfigHash: string = '';
   private isConnected: boolean = false;
+  private isStopped: boolean = false;
 
   constructor(config: MasterClientConfig) {
     this.config = config;
@@ -30,13 +31,17 @@ export class MasterClient {
    * Connect to master via WebSocket.
    */
   start(): void {
+    this.isStopped = false;
     this.connect();
   }
 
   private connect(): void {
+    if (this.isStopped) return;
+
     if (this.ws) {
       this.ws.removeAllListeners();
       this.ws.terminate();
+      this.ws = null;
     }
 
     // Convert http/https to ws/wss
@@ -53,6 +58,10 @@ export class MasterClient {
     });
 
     this.ws.on('open', () => {
+      if (this.isStopped) {
+        this.ws?.terminate();
+        return;
+      }
       console.log('[MasterClient] WebSocket connected');
       this.isConnected = true;
       if (this.reconnectTimer) {
@@ -64,9 +73,9 @@ export class MasterClient {
       this.sendEvent('config_request', {});
 
       // Start periodic status report (e.g. every 30s)
+      if (this.statusTimer) clearInterval(this.statusTimer);
       this.statusTimer = setInterval(() => {
-        // We trigger the hook which expects to call reportStatus
-        this.config.onStatusReport({}); // The index.ts handles fetching status and calling reportStatus
+        this.config.onStatusReport({});
       }, this.config.pollInterval);
     });
 
@@ -86,18 +95,28 @@ export class MasterClient {
 
     this.ws.on('error', (error) => {
       console.error(`[MasterClient] WebSocket error: ${error.message}`);
-      // close event will fire next
     });
   }
 
   private handleDisconnect(): void {
     this.isConnected = false;
-    if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.statusTimer) {
+      clearInterval(this.statusTimer);
+      this.statusTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     
+    if (this.isStopped) return;
+
     // Reconnect with backoff
     this.reconnectTimer = setTimeout(() => {
-      console.log('[MasterClient] Reconnecting...');
-      this.connect();
+      if (!this.isStopped) {
+        console.log('[MasterClient] Reconnecting...');
+        this.connect();
+      }
     }, 5000);
   }
 
@@ -119,17 +138,28 @@ export class MasterClient {
   }
 
   private sendEvent(event: string, payload: any): void {
-    if (this.ws && this.isConnected) {
+    if (this.ws && this.isConnected && !this.isStopped) {
       this.ws.send(JSON.stringify({ event, payload }));
     }
   }
 
   stop(): void {
-    if (this.ws) {
-      this.ws.close();
+    this.isStopped = true;
+    this.isConnected = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.statusTimer) {
+      clearInterval(this.statusTimer);
+      this.statusTimer = null;
+    }
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws.terminate();
+      this.ws = null;
+    }
+    console.log('[MasterClient] Stopped');
   }
 
   /**

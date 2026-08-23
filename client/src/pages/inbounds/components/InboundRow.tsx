@@ -53,23 +53,23 @@ export function InboundRow({ inbound: inb, expanded, onToggleExpand, onToggle, o
           </button>
 
           {/* Security badge */}
-          <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest border",
-            security === 'reality' ? "bg-purple-50 border-purple-100 text-purple-600" :
-            security === 'tls' ? "bg-emerald-50 border-emerald-100 text-emerald-600" :
-            "bg-bg-raised border-border-subtle text-fg-muted"
+          <span className={cn("px-2 py-0.5 rounded-md text-[10px] font-semibold border",
+            security === 'reality' ? "bg-purple-500/15 border-purple-500/30 text-purple-400" :
+            security === 'tls' ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" :
+            "bg-surface border-border text-fg-muted"
           )}>
-            {security === 'reality' ? <span className="flex items-center gap-1"><Shield size={10} /> Reality</span> :
-             security === 'tls' ? <span className="flex items-center gap-1"><LockIcon size={10} /> TLS</span> :
+            {security === 'reality' ? <span className="flex items-center gap-1"><Shield size={11} /> Reality</span> :
+             security === 'tls' ? <span className="flex items-center gap-1"><LockIcon size={11} /> TLS</span> :
              security}
           </span>
 
           {/* Transport */}
-          <span className="px-2 py-0.5 rounded-md bg-bg-raised border border-border text-[9px] font-bold text-fg-muted uppercase tracking-widest">{transport}</span>
+          <span className="px-2 py-0.5 rounded-md bg-surface border border-border text-[10px] font-mono font-semibold text-fg-muted uppercase">{transport}</span>
 
           {/* Port shares */}
           {inb.portShares && inb.portShares.length > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-100 text-amber-600 font-bold text-[9px] uppercase tracking-widest">
-              <Link2 size={10} /> {inb.portShares.length}
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-400 font-semibold text-[10px]">
+              <Link2 size={11} /> {inb.portShares.length}
             </span>
           )}
 

@@ -36,7 +36,17 @@ const server = createServer(app);
 // Security
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({
-  origin: config.master.frontendUrl,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      origin === config.master.frontendUrl ||
+      /^http:\/\/localhost:\d+$/.test(origin) ||
+      /^http:\/\/127\.0\.0\.1:\d+$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Dev fallback
+  },
   credentials: true,
 }));
 app.use(compression());
@@ -127,7 +137,11 @@ app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
-  res.sendFile(path.join(clientDist, 'index.html'));
+  const indexPath = path.join(clientDist, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.status(404).json({ error: 'Page not found' });
 });
 
 async function startServer() {

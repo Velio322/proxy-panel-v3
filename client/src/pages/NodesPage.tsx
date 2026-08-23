@@ -147,7 +147,6 @@ export function NodesPage() {
           selected={selected}
           onSelect={toggleSelect}
           onSelectAll={selectAll}
-          allSelected={selected.size === filtered.length && filtered.length > 0}
           onCheck={(id) => checkMut.mutate(id)}
           onPush={(id) => pushMut.mutate(id)}
           onRestart={(id) => restartMut.mutate(id)}

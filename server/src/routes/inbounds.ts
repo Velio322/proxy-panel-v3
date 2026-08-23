@@ -91,10 +91,19 @@ router.post('/', requireAdmin, auditLog('CREATE', 'inbound'), async (req: AuthRe
     const prisma = getPrisma();
     const data = createInboundSchema.parse(req.body);
 
-    const existing = await prisma.inbound.findFirst({
+    const existingTag = await prisma.inbound.findFirst({
       where: { nodeId: data.nodeId, tag: data.tag },
     });
-    if (existing) return res.status(400).json({ error: 'Tag already exists on this node' });
+    if (existingTag) return res.status(400).json({ error: 'Tag already exists on this node' });
+
+    const existingPort = await prisma.inbound.findFirst({
+      where: { nodeId: data.nodeId, port: data.port },
+    });
+    if (existingPort) {
+      return res.status(400).json({ 
+        error: `Port ${data.port} is already used by inbound "${existingPort.tag}" on this node. Use Port-Sharing or choose a different port.` 
+      });
+    }
 
     const inbound = await prisma.inbound.create({ data: data as any });
     
@@ -131,7 +140,11 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'inbound'), async (req: Auth
 router.delete('/:id', requireAdmin, auditLog('DELETE', 'inbound'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
+    const inbound = await prisma.inbound.findUnique({ where: { id: req.params.id } });
+    if (!inbound) return res.status(404).json({ error: 'Inbound not found' });
+
     await prisma.inbound.delete({ where: { id: req.params.id } });
+    getWorkerSocketManager().pushConfig(inbound.nodeId);
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Internal server error' });
@@ -172,6 +185,7 @@ router.post('/:id/port-share', requireAdmin, auditLog('CREATE', 'portShare'), as
       data: { ...data, inboundId: req.params.id },
     });
 
+    getWorkerSocketManager().pushConfig(inbound.nodeId);
     res.status(201).json(serializeBigInt(portShare));
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -184,7 +198,11 @@ router.post('/:id/port-share', requireAdmin, auditLog('CREATE', 'portShare'), as
 router.delete('/:inboundId/port-share/:id', requireAdmin, auditLog('DELETE', 'portShare'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
+    const inbound = await prisma.inbound.findUnique({ where: { id: req.params.inboundId } });
     await prisma.portShare.delete({ where: { id: req.params.id } });
+    if (inbound) {
+      getWorkerSocketManager().pushConfig(inbound.nodeId);
+    }
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Internal server error' });

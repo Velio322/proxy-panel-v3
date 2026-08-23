@@ -6,29 +6,28 @@ import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
 import { auditLog } from '../middleware/audit';
 import { cacheInvalidatePattern } from '../lib/redis';
-import { createAuditLog } from '../lib/audit';
 
 const router = Router();
 router.use(authenticate);
 
 const createClientSchema = z.object({
   username: z.string().min(3).max(50),
-  email: z.string().email().optional(),
+  email: z.string().email().optional().nullable(),
   password: z.string().min(6).optional(),
-  trafficLimit: z.number().min(0).optional(),
-  expireAt: z.string().datetime().optional(),
-  note: z.string().optional(),
+  trafficLimit: z.number().min(0).optional().default(0),
+  expireAt: z.string().datetime().optional().nullable(),
+  note: z.string().optional().nullable(),
   protocols: z.array(z.string()).optional(),
-  resellerId: z.string().optional(),
+  resellerId: z.string().optional().nullable(),
 });
 
 const updateClientSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().email().optional().nullable(),
   password: z.string().min(6).optional(),
   trafficLimit: z.number().min(0).optional(),
-  expireAt: z.string().datetime().optional(),
+  expireAt: z.string().datetime().optional().nullable(),
   banned: z.boolean().optional(),
-  note: z.string().optional(),
+  note: z.string().optional().nullable(),
   protocols: z.array(z.string()).optional(),
 });
 
@@ -118,12 +117,12 @@ router.post('/', requireAdmin, auditLog('CREATE', 'client'), async (req: AuthReq
         username: data.username,
         email: data.email,
         password: hashedPassword,
-        trafficLimit: data.trafficLimit || 0,
+        trafficLimit: BigInt(data.trafficLimit || 0),
         expireAt: data.expireAt ? new Date(data.expireAt) : null,
         note: data.note,
         subToken,
-        protocols: data.protocols || ['VLESS', 'HYSTERIA2'],
-        resellerId,
+        protocols: data.protocols || ['VLESS', 'HYSTERIA2', 'TROJAN', 'SHADOWSOCKS', 'NAIVEPROXY', 'MIERU'],
+        resellerId: resellerId || null,
         settings: {
           create: {},
         },
@@ -152,8 +151,11 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'client'), async (req: AuthR
     if (data.password) {
       updateData.password = await bcrypt.hash(data.password, 10);
     }
-    if (data.expireAt) {
-      updateData.expireAt = new Date(data.expireAt);
+    if (data.expireAt !== undefined) {
+      updateData.expireAt = data.expireAt ? new Date(data.expireAt) : null;
+    }
+    if (data.trafficLimit !== undefined) {
+      updateData.trafficLimit = BigInt(data.trafficLimit);
     }
 
     const client = await prisma.client.update({
@@ -162,7 +164,7 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'client'), async (req: AuthR
       include: { settings: true },
     });
 
-    await cacheInvalidatePattern(`sub:${req.params.id}*`);
+    await cacheInvalidatePattern(`sub:${client.subToken}*`);
     res.json(serializeBigInt({ ...client, password: undefined }));
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -175,8 +177,11 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'client'), async (req: AuthR
 router.delete('/:id', requireAdmin, auditLog('DELETE', 'client'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
+    const client = await prisma.client.findUnique({ where: { id: req.params.id } });
     await prisma.client.delete({ where: { id: req.params.id } });
-    await cacheInvalidatePattern(`sub:${req.params.id}*`);
+    if (client) {
+      await cacheInvalidatePattern(`sub:${client.subToken}*`);
+    }
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Internal server error' });
@@ -186,10 +191,11 @@ router.delete('/:id', requireAdmin, auditLog('DELETE', 'client'), async (req: Au
 router.post('/:id/reset-traffic', requireAdmin, auditLog('RESET_TRAFFIC', 'client'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
-    await prisma.client.update({
+    const updated = await prisma.client.update({
       where: { id: req.params.id },
-      data: { usedTraffic: 0, uploadTraffic: 0, downloadTraffic: 0 },
+      data: { usedTraffic: 0n, uploadTraffic: 0n, downloadTraffic: 0n },
     });
+    await cacheInvalidatePattern(`sub:${updated.subToken}*`);
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Internal server error' });
@@ -207,6 +213,7 @@ router.post('/:id/toggle-ban', requireAdmin, auditLog('TOGGLE_BAN', 'client'), a
       data: { banned: !client.banned },
     });
 
+    await cacheInvalidatePattern(`sub:${updated.subToken}*`);
     res.json({ banned: updated.banned });
   } catch {
     res.status(500).json({ error: 'Internal server error' });

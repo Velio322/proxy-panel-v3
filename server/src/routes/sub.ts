@@ -1,9 +1,27 @@
 import { Router, Request, Response } from 'express';
-import { z } from 'zod';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
-import { cacheGet, cacheSet } from '../lib/redis';
+import { cacheGet, cacheSet, cacheInvalidatePattern } from '../lib/redis';
 
 const router = Router();
+
+// ──────────────────────────────────────────────
+// User-Agent format auto-detection
+// ──────────────────────────────────────────────
+function detectFormat(userAgent: string, explicitFlag?: string): string {
+  if (explicitFlag) return explicitFlag.toLowerCase();
+  const ua = (userAgent || '').toLowerCase();
+
+  if (ua.includes('clash') || ua.includes('mihomo') || ua.includes('stash') || ua.includes('flclash')) {
+    return 'clash';
+  }
+  if (ua.includes('sing-box') || ua.includes('sfa') || ua.includes('sfi') || ua.includes('karing') || ua.includes('nekoray') || ua.includes('nekobox')) {
+    return 'singbox';
+  }
+  if (ua.includes('xray') || ua.includes('v2rayn') || ua.includes('v2rayng')) {
+    return 'base64';
+  }
+  return 'base64';
+}
 
 // ──────────────────────────────────────────────
 // Subscription endpoint (public — auth via subToken)
@@ -13,17 +31,9 @@ const router = Router();
 router.get('/:subToken/sub', async (req: Request, res: Response) => {
   try {
     const subToken = req.params.subToken as string;
-    const format = ((req.query.flag as string) || 'base64').toLowerCase();
-
-    // Check cache
-    const cacheKey = `sub:${subToken}:${format}`;
-    const cached = await cacheGet<string>(cacheKey);
-    if (cached) {
-      res.set('Content-Type', 'text/plain; charset=utf-8');
-      res.set('Profile-Update-Interval', '12');
-      res.set('Subscription-Userinfo', buildSubUserInfo(null));
-      return res.send(cached);
-    }
+    const explicitFlag = req.query.flag as string | undefined;
+    const userAgent = req.headers['user-agent'] || '';
+    const format = detectFormat(userAgent, explicitFlag);
 
     const prisma = getPrisma();
 
@@ -45,12 +55,20 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
       return res.status(403).send('Subscription expired');
     }
 
-    if (client.trafficLimit > 0 && client.usedTraffic >= client.trafficLimit) {
+    if (client.trafficLimit > 0n && client.usedTraffic >= client.trafficLimit) {
       return res.status(403).send('Traffic limit exceeded');
     }
 
+    // Check cache for generated output
+    const cacheKey = `sub:${subToken}:${format}`;
+    const cached = await cacheGet<string>(cacheKey);
+    if (cached) {
+      setSubscriptionHeaders(res, client, format);
+      return res.send(cached);
+    }
+
     // Get allowed protocols
-    const allowedProtocols = (client.protocols as string[]) || ['VLESS', 'HYSTERIA2'];
+    const allowedProtocols = (client.protocols as string[]) || ['VLESS', 'HYSTERIA2', 'TROJAN', 'SHADOWSOCKS', 'NAIVEPROXY', 'MIERU'];
 
     // Get all enabled inbounds matching client's protocols from ONLINE nodes
     const inbounds = await prisma.inbound.findMany({
@@ -61,7 +79,7 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
       },
       include: {
         node: {
-          select: { id: true, host: true, port: true, status: true },
+          select: { id: true, name: true, host: true, port: true, status: true },
         },
         portShares: {
           where: { enable: true },
@@ -105,11 +123,20 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
         break;
 
       case 'clash':
-        output = generateClashConfig(entries);
+        output = generateClashYaml(entries, client.username);
         break;
 
       case 'singbox':
-        output = generateSingboxConfig(entries);
+        output = generateSingboxJson(entries, client.username);
+        break;
+
+      case 'xray':
+      case 'v2ray':
+        output = generateXrayClientJson(entries, client);
+        break;
+
+      case 'raw':
+        output = entries.map((e) => e.raw).join('\n');
         break;
 
       case 'base64':
@@ -127,23 +154,33 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
       data: { lastActiveAt: new Date() },
     });
 
-    // Set subscription headers (standard)
-    res.set('Content-Type', 'text/plain; charset=utf-8');
-    res.set('Profile-Update-Interval', '12');
-    res.set('Subscription-Userinfo', [
-      `upload=${client.uploadTraffic}`,
-      `download=${client.downloadTraffic}`,
-      `total=${client.trafficLimit}`,
-      `expire=${client.expireAt ? Math.floor(client.expireAt.getTime() / 1000) : 0}`,
-    ].join('; '));
-    res.set('Content-Disposition', `attachment; filename="${client.username}"`);
-
+    setSubscriptionHeaders(res, client, format);
     res.send(output);
   } catch (error: any) {
     console.error('[Sub] Error:', error);
     res.status(500).send('Internal server error');
   }
 });
+
+function setSubscriptionHeaders(res: Response, client: any, format: string) {
+  const upload = client.uploadTraffic !== undefined && client.uploadTraffic !== null ? Number(client.uploadTraffic) : 0;
+  const download = client.downloadTraffic !== undefined && client.downloadTraffic !== null ? Number(client.downloadTraffic) : 0;
+  const total = client.trafficLimit !== undefined && client.trafficLimit !== null ? Number(client.trafficLimit) : 0;
+  const expire = client.expireAt ? Math.floor(new Date(client.expireAt).getTime() / 1000) : 0;
+
+  if (format === 'clash') {
+    res.set('Content-Type', 'application/x-yaml; charset=utf-8');
+  } else if (format === 'singbox' || format === 'xray' || format === 'json') {
+    res.set('Content-Type', 'application/json; charset=utf-8');
+  } else {
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+  }
+
+  res.set('Profile-Update-Interval', '12');
+  res.set('Profile-Title', `ProxPanel - ${client.username}`);
+  res.set('Subscription-Userinfo', `upload=${upload}; download=${download}; total=${total}; expire=${expire}`);
+  res.set('Content-Disposition', `attachment; filename="${client.username}"`);
+}
 
 // ──────────────────────────────────────────────
 // Client info via sub token
@@ -165,7 +202,6 @@ router.get('/:subToken/info', async (req: Request, res: Response) => {
 
     if (!client) return res.status(404).json({ error: 'Client not found' });
 
-    // Get online nodes count
     const onlineNodes = await prisma.node.count({
       where: { status: 'ONLINE', active: true },
     });
@@ -173,7 +209,7 @@ router.get('/:subToken/info', async (req: Request, res: Response) => {
     res.json({
       ...serializeBigInt(client),
       onlineNodes,
-      trafficPercent: client.trafficLimit > 0
+      trafficPercent: client.trafficLimit > 0n
         ? Math.round((Number(client.usedTraffic) / Number(client.trafficLimit)) * 10000) / 100
         : 0,
     });
@@ -205,9 +241,7 @@ router.post('/:subToken/regenerate', async (req: Request, res: Response) => {
       data: { subToken: newToken },
     });
 
-    // Invalidate old cache
-    await cacheGet(`sub:${req.params.subToken}:base64`).then(() => {}).catch(() => {});
-    // Note: pattern deletion would be ideal, but for simplicity just let old cache expire
+    await cacheInvalidatePattern(`sub:${req.params.subToken}*`);
 
     res.json({ subToken: newToken });
   } catch {
@@ -225,6 +259,8 @@ interface SubscriptionEntry {
   host: string;
   port: number;
   raw: string; // URI string
+  inbound: any;
+  client: any;
 }
 
 // ──────────────────────────────────────────────
@@ -232,96 +268,68 @@ interface SubscriptionEntry {
 // ──────────────────────────────────────────────
 
 function buildSubscriptionEntry(inbound: any, client: any): SubscriptionEntry | null {
-  const settings = inbound.settings as Record<string, any>;
-  const stream = inbound.stream as Record<string, any> || {};
+  const settings = (inbound.settings as Record<string, any>) || {};
+  const stream = (inbound.stream as Record<string, any>) || {};
   const node = inbound.node;
   const addr = node.host;
   const port = inbound.port;
+  const tag = `${node.name || 'Node'} - ${inbound.tag}`;
 
-  // Use client UUID as user ID (with fallback to inbound setting)
-  const userId = settings.id || client.uuid;
-  const password = settings.password || client.uuid;
+  const userId = client.uuid || settings.id;
+  const password = client.password || settings.password || client.uuid;
 
+  let raw = '';
   switch (inbound.protocol) {
     case 'VLESS':
-      return {
-        protocol: 'VLESS',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildVlessUri(userId, addr, port, stream, inbound.tag),
-      };
-
+      raw = buildVlessUri(userId, addr, port, stream, tag);
+      break;
     case 'VMESS':
-      return {
-        protocol: 'VMess',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildVmessUri(userId, addr, port, stream, inbound.tag),
-      };
-
+      raw = buildVmessUri(userId, addr, port, stream, tag);
+      break;
     case 'TROJAN':
-      return {
-        protocol: 'Trojan',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildTrojanUri(password, addr, port, stream, inbound.tag),
-      };
-
+      raw = buildTrojanUri(password, addr, port, stream, tag);
+      break;
     case 'SHADOWSOCKS':
-      return {
-        protocol: 'Shadowsocks',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildShadowsocksUri(settings, addr, port, inbound.tag),
-      };
-
+      raw = buildShadowsocksUri(settings, addr, port, tag);
+      break;
     case 'HYSTERIA2':
-      return {
-        protocol: 'Hysteria2',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildHysteria2Uri(password, addr, port, settings, inbound.tag),
-      };
-
+      raw = buildHysteria2Uri(password, addr, port, settings, tag);
+      break;
     case 'NAIVEPROXY':
-      return {
-        protocol: 'NaiveProxy',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildNaiveUri(settings, addr, port, inbound.tag),
-      };
-
+      raw = buildNaiveUri(settings, client, addr, port, tag);
+      break;
     case 'MIERU':
-      return {
-        protocol: 'Mieru',
-        tag: inbound.tag,
-        host: addr,
-        port,
-        raw: buildMieruUri(settings, addr, port, inbound.tag),
-      };
-
+      raw = buildMieruUri(settings, client, addr, port, tag);
+      break;
+    case 'TUIC':
+      raw = buildTuicUri(userId, password, addr, port, settings, tag);
+      break;
     default:
       return null;
   }
+
+  return {
+    protocol: inbound.protocol,
+    tag,
+    host: addr,
+    port,
+    raw,
+    inbound,
+    client,
+  };
 }
 
 function buildPortShareEntry(inbound: any, ps: any, client: any): SubscriptionEntry | null {
-  const settings = { ...(inbound.settings as Record<string, any>), ...(ps.settings as Record<string, any>) };
-  const stream = { ...(inbound.stream as Record<string, any> || {}), ...(ps.stream as Record<string, any> || {}) };
+  const settings = { ...(inbound.settings || {}), ...(ps.settings || {}) };
+  const stream = { ...(inbound.stream || {}), ...(ps.stream || {}) };
   const node = inbound.node;
   const addr = node.host;
-  const port = inbound.port; // external port
+  const port = inbound.port;
+  const tag = `${node.name || 'Node'} - ${ps.tag}`;
 
-  const userId = settings.id || client.uuid;
-  const password = settings.password || client.uuid;
+  const userId = client.uuid || settings.id;
+  const password = client.password || settings.password || client.uuid;
 
-  // Override SNI/host from port share
   if (ps.host) stream.sni = ps.host;
   if (ps.path) {
     if (stream.network === 'grpc') {
@@ -332,22 +340,39 @@ function buildPortShareEntry(inbound: any, ps: any, client: any): SubscriptionEn
     }
   }
 
+  let raw = '';
   switch (ps.protocol) {
     case 'VLESS':
-      return { protocol: 'VLESS', tag: ps.tag, host: addr, port, raw: buildVlessUri(userId, addr, port, stream, ps.tag) };
+      raw = buildVlessUri(userId, addr, port, stream, tag);
+      break;
     case 'VMESS':
-      return { protocol: 'VMess', tag: ps.tag, host: addr, port, raw: buildVmessUri(userId, addr, port, stream, ps.tag) };
+      raw = buildVmessUri(userId, addr, port, stream, tag);
+      break;
     case 'TROJAN':
-      return { protocol: 'Trojan', tag: ps.tag, host: addr, port, raw: buildTrojanUri(password, addr, port, stream, ps.tag) };
+      raw = buildTrojanUri(password, addr, port, stream, tag);
+      break;
     case 'SHADOWSOCKS':
-      return { protocol: 'Shadowsocks', tag: ps.tag, host: addr, port, raw: buildShadowsocksUri(settings, addr, port, ps.tag) };
+      raw = buildShadowsocksUri(settings, addr, port, tag);
+      break;
     case 'HYSTERIA2':
-      return { protocol: 'Hysteria2', tag: ps.tag, host: addr, port, raw: buildHysteria2Uri(password, addr, port, settings, ps.tag) };
+      raw = buildHysteria2Uri(password, addr, port, settings, tag);
+      break;
     case 'NAIVEPROXY':
-      return { protocol: 'NaiveProxy', tag: ps.tag, host: addr, port, raw: buildNaiveUri(settings, addr, port, ps.tag) };
+      raw = buildNaiveUri(settings, client, addr, port, tag);
+      break;
     default:
       return null;
   }
+
+  return {
+    protocol: ps.protocol,
+    tag,
+    host: addr,
+    port,
+    raw,
+    inbound,
+    client,
+  };
 }
 
 // ──────────────────────────────────────────────
@@ -356,19 +381,16 @@ function buildPortShareEntry(inbound: any, ps: any, client: any): SubscriptionEn
 
 function buildVlessUri(uuid: string, host: string, port: number, stream: any, tag: string): string {
   const params = new URLSearchParams();
-
-  // Transport
   const network = stream.network || 'tcp';
   params.set('type', network);
 
-  // Security
   const security = stream.security || 'none';
   params.set('security', security);
 
   if (security === 'tls') {
     if (stream.sni) params.set('sni', stream.sni);
     if (stream.fingerprint) params.set('fp', stream.fingerprint);
-    if (stream.alpn) params.set('alpn', stream.alpn);
+    if (stream.alpn) params.set('alpn', Array.isArray(stream.alpn) ? stream.alpn.join(',') : stream.alpn);
     if (stream.allowInsecure) params.set('allowInsecure', '1');
   }
 
@@ -380,25 +402,20 @@ function buildVlessUri(uuid: string, host: string, port: number, stream: any, ta
     if (stream.spiderX) params.set('spx', stream.spiderX);
   }
 
-  // Flow (for XTLS-Vision)
   if (stream.flow) params.set('flow', stream.flow);
 
-  // Transport-specific
   if (network === 'ws') {
-    const wsPath = stream.wsSettings?.path || stream.path || '/';
-    params.set('path', wsPath);
+    params.set('path', stream.wsSettings?.path || stream.path || '/');
     if (stream.wsSettings?.host) params.set('host', stream.wsSettings.host);
   }
 
   if (network === 'grpc') {
-    const serviceName = stream.grpcSettings?.serviceName || stream.serviceName || '';
-    params.set('serviceName', serviceName);
+    params.set('serviceName', stream.grpcSettings?.serviceName || stream.serviceName || '');
   }
 
   if (network === 'h2') {
-    const h2Path = stream.httpSettings?.path || stream.path || '/';
-    params.set('path', h2Path);
-    if (stream.httpSettings?.host) params.set('host', stream.httpSettings.host);
+    params.set('path', stream.httpSettings?.path || stream.path || '/');
+    if (stream.httpSettings?.host) params.set('host', Array.isArray(stream.httpSettings.host) ? stream.httpSettings.host[0] : stream.httpSettings.host);
   }
 
   if (network === 'httpupgrade') {
@@ -412,9 +429,7 @@ function buildVlessUri(uuid: string, host: string, port: number, stream: any, ta
   }
 
   const query = params.toString();
-  const frag = encodeURIComponent(tag);
-
-  return `vless://${uuid}@${host}:${port}?${query}#${frag}`;
+  return `vless://${uuid}@${host}:${port}?${query}#${encodeURIComponent(tag)}`;
 }
 
 function buildVmessUri(uuid: string, host: string, port: number, stream: any, tag: string): string {
@@ -433,7 +448,7 @@ function buildVmessUri(uuid: string, host: string, port: number, stream: any, ta
     tls: stream.security === 'tls' || stream.security === 'reality' ? 'tls' : '',
     sni: stream.sni || '',
     fp: stream.fingerprint || '',
-    alpn: stream.alpn || '',
+    alpn: stream.alpn ? (Array.isArray(stream.alpn) ? stream.alpn.join(',') : stream.alpn) : '',
     ver: stream.security === 'reality' ? 'pbk' : '',
   };
 
@@ -442,13 +457,12 @@ function buildVmessUri(uuid: string, host: string, port: number, stream: any, ta
 
 function buildTrojanUri(password: string, host: string, port: number, stream: any, tag: string): string {
   const params = new URLSearchParams();
-
   params.set('type', stream.network || 'tcp');
   params.set('security', stream.security || 'tls');
 
   if (stream.sni) params.set('sni', stream.sni);
   if (stream.fingerprint) params.set('fp', stream.fingerprint);
-  if (stream.alpn) params.set('alpn', stream.alpn);
+  if (stream.alpn) params.set('alpn', Array.isArray(stream.alpn) ? stream.alpn.join(',') : stream.alpn);
 
   if (stream.network === 'ws') {
     params.set('path', stream.wsSettings?.path || '/');
@@ -458,24 +472,18 @@ function buildTrojanUri(password: string, host: string, port: number, stream: an
   }
 
   const query = params.toString();
-  const frag = encodeURIComponent(tag);
-
-  return `trojan://${password}@${host}:${port}?${query}#${frag}`;
+  return `trojan://${password}@${host}:${port}?${query}#${encodeURIComponent(tag)}`;
 }
 
 function buildShadowsocksUri(settings: any, host: string, port: number, tag: string): string {
   const method = settings.method || 'aes-256-gcm';
   const password = settings.password || '';
-
-  // Shadowsocks URI: ss://BASE64(method:password)@host:port#tag
   const userinfo = Buffer.from(`${method}:${password}`).toString('base64');
-
   return `ss://${userinfo}@${host}:${port}#${encodeURIComponent(tag)}`;
 }
 
 function buildHysteria2Uri(password: string, host: string, port: number, settings: any, tag: string): string {
   const params = new URLSearchParams();
-
   if (settings.sni) params.set('sni', settings.sni);
   if (settings.allowInsecure) params.set('insecure', '1');
   if (settings.obfs?.type && settings.obfs.type !== 'none') {
@@ -484,43 +492,36 @@ function buildHysteria2Uri(password: string, host: string, port: number, setting
   }
 
   const query = params.toString();
-  const frag = encodeURIComponent(tag);
-
-  return `hy2://${password}@${host}:${port}${query ? '?' + query : ''}#${frag}`;
+  return `hy2://${password}@${host}:${port}${query ? '?' + query : ''}#${encodeURIComponent(tag)}`;
 }
 
-function buildNaiveUri(settings: any, host: string, port: number, tag: string): string {
-  const proto = settings.proto || 'quic';
-  const proxy = settings.proxy || '';
-  const nonce = settings.nonce || '';
-
-  // NaiveProxy URI: naive+PROTO://USER:PASS@HOST:PORT?PARAMS#TAG
-  let uri = `naive+https://`;
-  if (proxy) uri += `${encodeURIComponent(proxy)}@`;
-  uri += `${host}:${port}`;
+function buildNaiveUri(settings: any, client: any, host: string, port: number, tag: string): string {
+  const username = client.username || settings.username || 'user';
+  const password = client.password || settings.password || 'password';
+  const domain = settings.domain || settings.sni || host;
 
   const params = new URLSearchParams();
-  if (proto) params.set('proto', proto);
-  if (nonce) params.set('padding', nonce);
-
+  if (domain && domain !== host) params.set('sni', domain);
   const query = params.toString();
-  uri += `${query ? '?' + query : ''}`;
-  uri += `#${encodeURIComponent(tag)}`;
 
-  return uri;
+  return `naive+https://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}${query ? '?' + query : ''}#${encodeURIComponent(tag)}`;
 }
 
-function buildMieruUri(settings: any, host: string, port: number, tag: string): string {
-  // Mieru doesn't have a standard URI format — output as JSON block
-  return JSON.stringify({
-    protocol: 'mieru',
-    server: host,
-    port,
-    username: settings.username || 'user',
-    password: settings.password || '',
-    authentication: settings.authentication || 'password',
-    remark: tag,
-  });
+function buildMieruUri(settings: any, client: any, host: string, port: number, tag: string): string {
+  const username = client.username || settings.username || 'user';
+  const password = client.password || settings.password || 'password';
+  const transport = (settings.transport || 'tcp').toLowerCase();
+  const domain = settings.domain || host;
+
+  return `mieru://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${domain}:${port}?transport=${transport}#${encodeURIComponent(tag)}`;
+}
+
+function buildTuicUri(uuid: string, pass: string, host: string, port: number, settings: any, tag: string): string {
+  const params = new URLSearchParams();
+  if (settings.sni) params.set('sni', settings.sni);
+  params.set('congestion_control', settings.congestion_control || 'bbr');
+  if (settings.alpn) params.set('alpn', 'h3');
+  return `tuic://${uuid}:${pass}@${host}:${port}?${params.toString()}#${encodeURIComponent(tag)}`;
 }
 
 // ──────────────────────────────────────────────
@@ -528,132 +529,254 @@ function buildMieruUri(settings: any, host: string, port: number, tag: string): 
 // ──────────────────────────────────────────────
 
 function generateBase64(entries: SubscriptionEntry[]): string {
-  const lines = entries
-    .filter((e) => e.protocol !== 'Mieru') // Mieru has no URI format
-    .map((e) => e.raw);
-
+  const lines = entries.map((e) => e.raw).filter(Boolean);
   return Buffer.from(lines.join('\n')).toString('base64');
 }
 
-function generateClashConfig(entries: SubscriptionEntry[]): string {
+// ── Clash / Mihomo YAML Generator ──
+function generateClashYaml(entries: SubscriptionEntry[], username: string): string {
   const proxies: any[] = [];
 
   for (const entry of entries) {
     const raw = entry.raw;
-    let proxy: any = null;
+    const { protocol, host, port, tag, inbound } = entry;
+    const settings = inbound.settings || {};
+    const stream = inbound.stream || {};
 
-    if (entry.protocol === 'VLESS') {
+    if (protocol === 'VLESS') {
       const params = extractParams(raw);
-      proxy = {
-        name: entry.tag,
+      const uuid = extractUserFromUri(raw);
+      const proxy: any = {
+        name: tag,
         type: 'vless',
-        server: entry.host,
-        port: entry.port,
-        uuid: extractUserFromUri(raw),
-        tls: params.security === 'tls' || params.security === 'reality',
-        flow: params.flow || '',
+        server: host,
+        port,
+        uuid,
         network: params.type || 'tcp',
       };
-      if (params.security === 'tls') {
-        proxy.servername = params.sni || entry.host;
-        proxy['client-fingerprint'] = params.fp || 'chrome';
-      }
-      if (params.security === 'reality') {
-        proxy.servername = params.sni || entry.host;
-        proxy['client-fingerprint'] = params.fp || 'chrome';
-        proxy['reality-public-key'] = params.pbk || '';
-        proxy['reality-short-id'] = params.sid || '';
-        proxy['reality-opts'] = { 'public-key': params.pbk || '', short_id: params.sid || '' };
-        delete proxy.tls;
-        proxy['client-fingerprint'] = params.fp || 'chrome';
-      }
-      if (params.type === 'ws') {
-        proxy.wsOpts = { path: params.path || '/', headers: params.host ? { Host: params.host } : {} };
-      }
-      if (params.type === 'grpc') {
-        proxy.grpcOpts = { 'grpc-service-name': params.serviceName || '' };
-      }
-    }
 
-    if (entry.protocol === 'Hysteria2') {
+      if (params.flow) proxy.flow = params.flow;
+
+      if (params.security === 'reality') {
+        proxy.tls = true;
+        proxy.servername = params.sni || host;
+        proxy['client-fingerprint'] = params.fp || 'chrome';
+        proxy['reality-opts'] = {
+          'public-key': params.pbk || '',
+          'short-id': params.sid || '',
+        };
+      } else if (params.security === 'tls') {
+        proxy.tls = true;
+        proxy.servername = params.sni || host;
+        proxy['client-fingerprint'] = params.fp || 'chrome';
+        if (params.allowInsecure === '1') proxy['skip-cert-verify'] = true;
+      }
+
+      if (params.type === 'ws') {
+        proxy['ws-opts'] = {
+          path: params.path || '/',
+          headers: params.host ? { Host: params.host } : {},
+        };
+      } else if (params.type === 'grpc') {
+        proxy['grpc-opts'] = {
+          'grpc-service-name': params.serviceName || '',
+        };
+      } else if (params.type === 'h2') {
+        proxy['h2-opts'] = {
+          path: params.path || '/',
+          host: params.host ? [params.host] : [host],
+        };
+      } else if (params.type === 'httpupgrade') {
+        proxy['httpupgrade-opts'] = {
+          path: params.path || '/',
+          host: params.host || host,
+        };
+      }
+
+      proxies.push(proxy);
+    } else if (protocol === 'HYSTERIA2') {
       const params = extractParams(raw);
-      proxy = {
-        name: entry.tag,
+      const pass = extractPassFromUri(raw);
+      const proxy: any = {
+        name: tag,
         type: 'hysteria2',
-        server: entry.host,
-        port: entry.port,
-        password: extractPassFromUri(raw),
-        sni: params.sni || entry.host,
+        server: host,
+        port,
+        password: pass,
+        sni: params.sni || host,
         'skip-cert-verify': params.insecure === '1',
       };
       if (params.obfs) {
         proxy.obfs = params.obfs;
         proxy['obfs-password'] = params['obfs-password'] || '';
       }
-    }
-
-    if (entry.protocol === 'Trojan') {
+      proxies.push(proxy);
+    } else if (protocol === 'TROJAN') {
       const params = extractParams(raw);
-      proxy = {
-        name: entry.tag,
+      const pass = extractPassFromUri(raw);
+      const proxy: any = {
+        name: tag,
         type: 'trojan',
-        server: entry.host,
-        port: entry.port,
-        password: extractPassFromUri(raw),
-        sni: params.sni || entry.host,
+        server: host,
+        port,
+        password: pass,
+        sni: params.sni || host,
         network: params.type || 'tcp',
       };
-    }
-
-    if (entry.protocol === 'Shadowsocks') {
-      proxy = {
-        name: entry.tag,
+      if (params.type === 'ws') {
+        proxy['ws-opts'] = { path: params.path || '/' };
+      } else if (params.type === 'grpc') {
+        proxy['grpc-opts'] = { 'grpc-service-name': params.serviceName || '' };
+      }
+      proxies.push(proxy);
+    } else if (protocol === 'SHADOWSOCKS') {
+      const proxy = {
+        name: tag,
         type: 'ss',
-        server: entry.host,
-        port: entry.port,
+        server: host,
+        port,
         cipher: extractSsMethod(raw),
         password: extractSsPassword(raw),
       };
+      proxies.push(proxy);
+    } else if (protocol === 'TUIC') {
+      const pass = extractPassFromUri(raw);
+      const uuid = extractUserFromUri(raw);
+      const proxy = {
+        name: tag,
+        type: 'tuic',
+        server: host,
+        port,
+        uuid: uuid || settings.id,
+        password: pass || settings.password,
+        'congestion-controller': settings.congestion_control || 'bbr',
+        sni: settings.sni || host,
+      };
+      proxies.push(proxy);
     }
-
-    if (proxy) proxies.push(proxy);
   }
 
-  const config = {
-    mixed: 7890,
-    allow_lan: false,
-    mode: 'rule',
-    log_level: 'info',
-    proxies,
-    'proxy-groups': [
-      { name: 'Proxy', type: 'select', proxies: proxies.map((p) => p.name) },
-      { name: 'Auto', type: 'url-test', proxies: proxies.map((p) => p.name) },
-    ],
-    rules: ['MATCH,Proxy'],
-  };
+  const proxyNames = proxies.map((p) => p.name);
 
-  return JSON.stringify(config, null, 2);
+  // Manual YAML string generation ensuring full compatibility
+  let yaml = '';
+  yaml += `# ProxPanel Clash.Meta / Mihomo Configuration for ${username}\n`;
+  yaml += `port: 7890\n`;
+  yaml += `socks-port: 7891\n`;
+  yaml += `mixed-port: 7890\n`;
+  yaml += `allow-lan: false\n`;
+  yaml += `mode: rule\n`;
+  yaml += `log-level: info\n`;
+  yaml += `ipv6: false\n`;
+  yaml += `external-controller: 127.0.0.1:9090\n\n`;
+
+  yaml += `dns:\n`;
+  yaml += `  enable: true\n`;
+  yaml += `  ipv6: false\n`;
+  yaml += `  enhanced-mode: fake-ip\n`;
+  yaml += `  nameserver:\n`;
+  yaml += `    - 8.8.8.8\n`;
+  yaml += `    - 1.1.1.1\n`;
+  yaml += `  fallback:\n`;
+  yaml += `    - https://dns.cloudflare.com/dns-query\n`;
+  yaml += `    - https://dns.google/dns-query\n\n`;
+
+  yaml += `proxies:\n`;
+  for (const p of proxies) {
+    yaml += `  - name: "${p.name}"\n`;
+    yaml += `    type: ${p.type}\n`;
+    yaml += `    server: "${p.server}"\n`;
+    yaml += `    port: ${p.port}\n`;
+
+    if (p.uuid) yaml += `    uuid: "${p.uuid}"\n`;
+    if (p.password) yaml += `    password: "${p.password}"\n`;
+    if (p.cipher) yaml += `    cipher: "${p.cipher}"\n`;
+    if (p.network) yaml += `    network: ${p.network}\n`;
+    if (p.tls) yaml += `    tls: true\n`;
+    if (p.flow) yaml += `    flow: ${p.flow}\n`;
+    if (p.servername) yaml += `    servername: "${p.servername}"\n`;
+    if (p.sni) yaml += `    sni: "${p.sni}"\n`;
+    if (p['client-fingerprint']) yaml += `    client-fingerprint: ${p['client-fingerprint']}\n`;
+    if (p['skip-cert-verify']) yaml += `    skip-cert-verify: true\n`;
+    if (p.obfs) yaml += `    obfs: ${p.obfs}\n`;
+    if (p['obfs-password']) yaml += `    obfs-password: "${p['obfs-password']}"\n`;
+    if (p['congestion-controller']) yaml += `    congestion-controller: ${p['congestion-controller']}\n`;
+
+    if (p['reality-opts']) {
+      yaml += `    reality-opts:\n`;
+      yaml += `      public-key: "${p['reality-opts']['public-key']}"\n`;
+      yaml += `      short-id: "${p['reality-opts']['short-id']}"\n`;
+    }
+    if (p['ws-opts']) {
+      yaml += `    ws-opts:\n`;
+      yaml += `      path: "${p['ws-opts'].path}"\n`;
+      if (p['ws-opts'].headers?.Host) {
+        yaml += `      headers:\n`;
+        yaml += `        Host: "${p['ws-opts'].headers.Host}"\n`;
+      }
+    }
+    if (p['grpc-opts']) {
+      yaml += `    grpc-opts:\n`;
+      yaml += `      grpc-service-name: "${p['grpc-opts']['grpc-service-name']}"\n`;
+    }
+    yaml += `\n`;
+  }
+
+  yaml += `proxy-groups:\n`;
+  yaml += `  - name: PROXY\n`;
+  yaml += `    type: select\n`;
+  yaml += `    proxies:\n`;
+  yaml += `      - AUTO\n`;
+  for (const name of proxyNames) {
+    yaml += `      - "${name}"\n`;
+  }
+  yaml += `      - DIRECT\n\n`;
+
+  yaml += `  - name: AUTO\n`;
+  yaml += `    type: url-test\n`;
+  yaml += `    url: http://www.gstatic.com/generate_204\n`;
+  yaml += `    interval: 300\n`;
+  yaml += `    tolerance: 50\n`;
+  yaml += `    proxies:\n`;
+  for (const name of proxyNames) {
+    yaml += `      - "${name}"\n`;
+  }
+  yaml += `\n`;
+
+  yaml += `rules:\n`;
+  yaml += `  - GEOIP,private,DIRECT,no-resolve\n`;
+  yaml += `  - GEOSITE,category-ads-all,REJECT\n`;
+  yaml += `  - MATCH,PROXY\n`;
+
+  return yaml;
 }
 
-function generateSingboxConfig(entries: SubscriptionEntry[]): string {
+// ── Sing-box JSON Generator (v1.9+) ──
+function generateSingboxJson(entries: SubscriptionEntry[], username: string): string {
   const outbounds: any[] = [];
+  const proxyTags: string[] = [];
 
   for (const entry of entries) {
-    if (entry.protocol === 'VLESS') {
-      const params = extractParams(entry.raw);
+    const raw = entry.raw;
+    const { protocol, host, port, tag, inbound } = entry;
+    const settings = inbound.settings || {};
+
+    if (protocol === 'VLESS') {
+      const params = extractParams(raw);
+      const uuid = extractUserFromUri(raw);
       const ob: any = {
         type: 'vless',
-        tag: entry.tag,
-        server: entry.host,
-        server_port: entry.port,
-        uuid: extractUserFromUri(entry.raw),
-        flow: params.flow || '',
+        tag,
+        server: host,
+        server_port: port,
+        uuid,
+        flow: params.flow || undefined,
       };
 
       if (params.security === 'reality') {
         ob.tls = {
           enabled: true,
-          server_name: params.sni || entry.host,
+          server_name: params.sni || host,
           utls: { enabled: true, fingerprint: params.fp || 'chrome' },
           reality: {
             enabled: true,
@@ -664,8 +787,9 @@ function generateSingboxConfig(entries: SubscriptionEntry[]): string {
       } else if (params.security === 'tls') {
         ob.tls = {
           enabled: true,
-          server_name: params.sni || entry.host,
+          server_name: params.sni || host,
           utls: { enabled: true, fingerprint: params.fp || 'chrome' },
+          insecure: params.allowInsecure === '1',
         };
       }
 
@@ -673,27 +797,28 @@ function generateSingboxConfig(entries: SubscriptionEntry[]): string {
         ob.transport = {
           type: 'ws',
           path: params.path || '/',
-          headers: params.host ? { Host: params.host } : {},
+          headers: params.host ? { Host: params.host } : undefined,
         };
-      }
-      if (params.type === 'grpc') {
+      } else if (params.type === 'grpc') {
         ob.transport = { type: 'grpc', service_name: params.serviceName || '' };
+      } else if (params.type === 'httpupgrade') {
+        ob.transport = { type: 'httpupgrade', path: params.path || '/', host: params.host || host };
       }
 
       outbounds.push(ob);
-    }
-
-    if (entry.protocol === 'Hysteria2') {
-      const params = extractParams(entry.raw);
+      proxyTags.push(tag);
+    } else if (protocol === 'HYSTERIA2') {
+      const params = extractParams(raw);
+      const pass = extractPassFromUri(raw);
       const ob: any = {
         type: 'hysteria2',
-        tag: entry.tag,
-        server: entry.host,
-        server_port: entry.port,
-        password: extractPassFromUri(entry.raw),
+        tag,
+        server: host,
+        server_port: port,
+        password: pass,
         tls: {
           enabled: true,
-          server_name: params.sni || entry.host,
+          server_name: params.sni || host,
           insecure: params.insecure === '1',
         },
       };
@@ -701,55 +826,212 @@ function generateSingboxConfig(entries: SubscriptionEntry[]): string {
         ob.obfs = { type: params.obfs, password: params['obfs-password'] || '' };
       }
       outbounds.push(ob);
-    }
-
-    if (entry.protocol === 'Trojan') {
-      const params = extractParams(entry.raw);
-      outbounds.push({
+      proxyTags.push(tag);
+    } else if (protocol === 'TROJAN') {
+      const params = extractParams(raw);
+      const pass = extractPassFromUri(raw);
+      const ob: any = {
         type: 'trojan',
-        tag: entry.tag,
-        server: entry.host,
-        server_port: entry.port,
-        password: extractPassFromUri(entry.raw),
-        tls: { enabled: true, server_name: params.sni || entry.host },
+        tag,
+        server: host,
+        server_port: port,
+        password: pass,
+        tls: { enabled: true, server_name: params.sni || host },
+      };
+      outbounds.push(ob);
+      proxyTags.push(tag);
+    } else if (protocol === 'SHADOWSOCKS') {
+      outbounds.push({
+        type: 'shadowsocks',
+        tag,
+        server: host,
+        server_port: port,
+        method: extractSsMethod(raw),
+        password: extractSsPassword(raw),
       });
-    }
-
-    if (entry.protocol === 'NaiveProxy') {
-      const settings = extractNaiveSettings(entry);
+      proxyTags.push(tag);
+    } else if (protocol === 'NAIVEPROXY') {
+      const naive = extractNaiveSettings(entry);
       outbounds.push({
         type: 'naive',
-        tag: entry.tag,
-        server: entry.host,
-        server_port: entry.port,
-        username: settings.username || 'user',
-        password: settings.password || '',
-        tls: {
-          server_name: settings.domain || settings.sni || entry.host,
-        },
+        tag,
+        server: host,
+        server_port: port,
+        username: naive.username || 'user',
+        password: naive.password || 'password',
+        tls: { server_name: naive.domain || host },
       });
-    }
-
-    if (entry.protocol === 'Mieru') {
-      const settings = extractMieruSettings(entry);
-      const transport = (settings.transport || 'tcp').toUpperCase();
+      proxyTags.push(tag);
+    } else if (protocol === 'MIERU') {
+      const mieru = extractMieruSettings(entry);
       outbounds.push({
         type: 'mieru',
-        tag: entry.tag,
-        server: entry.host,
-        server_port: entry.port,
-        transport: transport === 'TCP,UDP' || transport === 'BOTH' ? 'TCP' : transport,
-        username: settings.username || settings.name || 'user',
-        password: settings.password || '',
-        multiplexing: settings.multiplexing || 'MULTIPLEXING_HIGH',
+        tag,
+        server: host,
+        server_port: port,
+        transport: mieru.transport || 'tcp',
+        username: mieru.username || 'user',
+        password: mieru.password || '',
+      });
+      proxyTags.push(tag);
+    }
+  }
+
+  // Prepend Selector and URLTest groups
+  const selectorGroup = {
+    type: 'selector',
+    tag: 'PROXY',
+    outbounds: ['AUTO', ...proxyTags, 'direct'],
+    default: 'AUTO',
+  };
+
+  const autoGroup = {
+    type: 'urltest',
+    tag: 'AUTO',
+    outbounds: proxyTags,
+    url: 'http://www.gstatic.com/generate_204',
+    interval: '5m',
+    tolerance: 50,
+  };
+
+  const directOutbound = { type: 'direct', tag: 'direct' };
+  const blockOutbound = { type: 'block', tag: 'block' };
+  const dnsOutbound = { type: 'dns', tag: 'dns-out' };
+
+  const singboxConfig = {
+    log: { level: 'info', timestamp: true },
+    dns: {
+      servers: [
+        { tag: 'google', address: 'tls://8.8.8.8' },
+        { tag: 'cloudflare', address: 'tls://1.1.1.1' },
+        { tag: 'local', address: 'local', detour: 'direct' },
+      ],
+      rules: [
+        { outbound: 'any', server: 'local' },
+        { clash_mode: 'direct', server: 'local' },
+      ],
+    },
+    inbounds: [
+      { type: 'mixed', tag: 'mixed-in', listen: '127.0.0.1', listen_port: 2080 },
+      { type: 'tun', tag: 'tun-in', interface_name: 'tun0', inet4_address: '172.19.0.1/30', auto_route: true, strict_route: true, stack: 'mixed' },
+    ],
+    outbounds: [selectorGroup, autoGroup, ...outbounds, directOutbound, blockOutbound, dnsOutbound],
+    route: {
+      rules: [
+        { protocol: 'dns', outbound: 'dns-out' },
+        { ip_is_private: true, outbound: 'direct' },
+        { geosite: 'category-ads-all', outbound: 'block' },
+        { outbound: 'PROXY' },
+      ],
+      auto_detect_interface: true,
+    },
+  };
+
+  return JSON.stringify(singboxConfig, null, 2);
+}
+
+// ── Xray Full Client Config Generator ──
+function generateXrayClientJson(entries: SubscriptionEntry[], client: any): string {
+  const xrayOutbounds: any[] = [];
+
+  for (const entry of entries) {
+    const raw = entry.raw;
+    const { protocol, host, port, tag, inbound } = entry;
+    const stream = inbound.stream || {};
+
+    if (protocol === 'VLESS') {
+      const params = extractParams(raw);
+      const uuid = extractUserFromUri(raw);
+      const ob: any = {
+        tag,
+        protocol: 'vless',
+        settings: {
+          vnext: [{
+            address: host,
+            port,
+            users: [{ id: uuid, encryption: 'none', flow: params.flow || undefined }],
+          }],
+        },
+        streamSettings: {
+          network: params.type || 'tcp',
+          security: params.security || 'none',
+        },
+      };
+
+      if (params.security === 'reality') {
+        ob.streamSettings.realitySettings = {
+          serverName: params.sni || host,
+          fingerprint: params.fp || 'chrome',
+          publicKey: params.pbk || '',
+          shortId: params.sid || '',
+          spiderX: params.spx || '',
+        };
+      } else if (params.security === 'tls') {
+        ob.streamSettings.tlsSettings = {
+          serverName: params.sni || host,
+          fingerprint: params.fp || 'chrome',
+          allowInsecure: params.allowInsecure === '1',
+        };
+      }
+
+      if (params.type === 'ws') {
+        ob.streamSettings.wsSettings = { path: params.path || '/', headers: params.host ? { Host: params.host } : {} };
+      } else if (params.type === 'grpc') {
+        ob.streamSettings.grpcSettings = { serviceName: params.serviceName || '' };
+      }
+
+      xrayOutbounds.push(ob);
+    } else if (protocol === 'TROJAN') {
+      const params = extractParams(raw);
+      const pass = extractPassFromUri(raw);
+      xrayOutbounds.push({
+        tag,
+        protocol: 'trojan',
+        settings: {
+          servers: [{ address: host, port, password: pass }],
+        },
+        streamSettings: {
+          network: params.type || 'tcp',
+          security: 'tls',
+          tlsSettings: { serverName: params.sni || host },
+        },
+      });
+    } else if (protocol === 'SHADOWSOCKS') {
+      xrayOutbounds.push({
+        tag,
+        protocol: 'shadowsocks',
+        settings: {
+          servers: [{
+            address: host,
+            port,
+            method: extractSsMethod(raw),
+            password: extractSsPassword(raw),
+          }],
+        },
       });
     }
   }
 
-  return JSON.stringify({
-    outbounds,
-    route: { rules: [], auto_detect_interface: true },
-  }, null, 2);
+  xrayOutbounds.push({ protocol: 'freedom', tag: 'direct' });
+  xrayOutbounds.push({ protocol: 'blackhole', tag: 'block' });
+
+  const clientConfig = {
+    log: { loglevel: 'warning' },
+    inbounds: [
+      { tag: 'socks-in', port: 10808, listen: '127.0.0.1', protocol: 'socks', settings: { auth: 'noauth', udp: true } },
+      { tag: 'http-in', port: 10809, listen: '127.0.0.1', protocol: 'http', settings: {} },
+    ],
+    outbounds: xrayOutbounds,
+    routing: {
+      domainStrategy: 'IPIfNonMatch',
+      rules: [
+        { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+        { type: 'field', domain: ['geosite:category-ads-all'], outboundTag: 'block' },
+      ],
+    },
+  };
+
+  return JSON.stringify(clientConfig, null, 2);
 }
 
 // ──────────────────────────────────────────────
@@ -774,19 +1056,22 @@ function extractParams(uri: string): Record<string, string> {
 }
 
 function extractUserFromUri(uri: string): string {
-  // vless://USER@HOST:PORT...
-  const match = uri.match(/^vless:\/\/([^@]+)@/);
-  return match ? match[1] : '';
+  const match = uri.match(/^[a-z0-9+-]+:\/\/([^@:]+)@/i);
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 function extractPassFromUri(uri: string): string {
-  // hy2://PASS@HOST:PORT or trojan://PASS@HOST:PORT
-  const match = uri.match(/^hy2:\/\/([^@]+)@/) || uri.match(/^trojan:\/\/([^@]+)@/);
-  return match ? match[1] : '';
+  const match = uri.match(/^[a-z0-9+-]+:\/\/([^@]+)@/i);
+  if (!match) return '';
+  const userinfo = match[1];
+  const colonIdx = userinfo.indexOf(':');
+  if (colonIdx >= 0) {
+    return decodeURIComponent(userinfo.substring(colonIdx + 1));
+  }
+  return decodeURIComponent(userinfo);
 }
 
 function extractSsMethod(uri: string): string {
-  // ss://BASE64@HOST:PORT
   const match = uri.match(/^ss:\/\/([^@]+)@/);
   if (!match) return 'aes-256-gcm';
   try {
@@ -827,19 +1112,21 @@ function extractNaiveSettings(entry: SubscriptionEntry): Record<string, any> {
 
 function extractMieruSettings(entry: SubscriptionEntry): Record<string, any> {
   try {
-    return JSON.parse(entry.raw);
+    const raw = entry.raw;
+    const match = raw.match(/^mieru:\/\/(?:([^@]+)@)?([^:?#]+)(?::(\d+))?/);
+    if (!match) return {};
+    const userPass = match[1] || '';
+    const colonIdx = userPass.indexOf(':');
+    const params = extractParams(raw);
+    return {
+      username: colonIdx >= 0 ? decodeURIComponent(userPass.substring(0, colonIdx)) : userPass,
+      password: colonIdx >= 0 ? decodeURIComponent(userPass.substring(colonIdx + 1)) : '',
+      domain: match[2] || '',
+      transport: params.transport || 'tcp',
+    };
   } catch {
     return {};
   }
-}
-
-function buildSubUserInfo(client: any): string {
-  if (!client) return 'upload=0; download=0; total=0; expire=0';
-  const upload = client.netUpload || 0;
-  const download = client.netDownload || 0;
-  const total = client.trafficLimit || 0;
-  const expire = client.expireAt ? Math.floor(new Date(client.expireAt).getTime() / 1000) : 0;
-  return `upload=${upload}; download=${download}; total=${total}; expire=${expire}`;
 }
 
 export default router;

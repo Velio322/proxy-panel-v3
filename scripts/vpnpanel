@@ -1,0 +1,443 @@
+#!/usr/bin/env bash
+
+# ══════════════════════════════════════════════════════════════
+# ProxPanel v3 — Unified Management CLI (vpnpanel / proxpanel)
+# ══════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+PANEL_DIR="/opt/proxpanel"
+NODE_DIR="/opt/proxpanel-node"
+CONFIG_DIR="/etc/proxpanel"
+BACKUP_DIR="/var/backups/proxpanel"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}  ✓${NC} $1"; }
+warn() { echo -e "${YELLOW}  !${NC} $1"; }
+fail() { echo -e "${RED}  ✗ $1${NC}"; exit 1; }
+
+ensure_root() {
+    [[ $EUID -ne 0 ]] && fail "This command must be run as root (sudo vpnpanel ...)"
+}
+
+get_panel_mode() {
+    if [[ -f "${PANEL_DIR}/docker-compose.yml" ]] && command -v docker &>/dev/null; then
+        echo "docker"
+    elif systemctl list-unit-files proxpanel-master.service &>/dev/null 2>&1; then
+        echo "systemd"
+    elif systemctl list-unit-files proxpanel-node.service &>/dev/null 2>&1; then
+        echo "node-only"
+    else
+        echo "unknown"
+    fi
+}
+
+cmd_status() {
+    echo -e "\n${CYAN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║                 ProxPanel v3 System Status                 ║${NC}"
+    echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}\n"
+
+    local MODE; MODE=$(get_panel_mode)
+    local UPTIME; UPTIME=$(uptime -p 2>/dev/null || uptime)
+    local BBR_STATUS; BBR_STATUS=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown")
+    local CONNS; CONNS=$(ss -t state established 2>/dev/null | wc -l || echo "0")
+    CONNS=$((CONNS > 0 ? CONNS - 1 : 0))
+
+    echo -e "  ${BOLD}Host Info:${NC}"
+    echo -e "    • OS / Kernel:     $(uname -sr) ($(uname -m))"
+    echo -e "    • System Uptime:   ${UPTIME}"
+    echo -e "    • TCP Congestion:  ${BOLD}${BBR_STATUS}${NC} $([[ "$BBR_STATUS" == "bbr" ]] && echo -e "${GREEN}(Optimized)${NC}" || echo -e "${YELLOW}(Standard)${NC}")"
+    echo -e "    • Active Conns:    ${BOLD}${CONNS}${NC} established TCP sessions"
+    echo -e "    • Memory (RAM):    $(free -m | awk '/^Mem:/{printf "%dMB / %dMB (%.1f%%)", $3, $2, $3*100/$2}')"
+    echo -e "    • Deployment:      ${BOLD}${MODE}${NC}\n"
+
+    echo -e "  ${BOLD}Services Status:${NC}"
+    if [[ "$MODE" == "docker" ]]; then
+        cd "$PANEL_DIR"
+        docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || docker compose ps
+    elif [[ "$MODE" == "systemd" ]]; then
+        for svc in proxpanel-master postgresql redis; do
+            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                echo -e "    • ${svc}: ${GREEN}ACTIVE (Running)${NC}"
+            else
+                echo -e "    • ${svc}: ${RED}INACTIVE / FAILED${NC}"
+            fi
+        done
+    fi
+
+    if systemctl list-unit-files proxpanel-node.service &>/dev/null 2>&1; then
+        if systemctl is-active --quiet proxpanel-node; then
+            echo -e "    • proxpanel-node: ${GREEN}ACTIVE (Worker Running)${NC}"
+        else
+            echo -e "    • proxpanel-node: ${YELLOW}INACTIVE${NC}"
+        fi
+    fi
+
+    echo -e "\n  ${BOLD}Proxy Cores Status:${NC}"
+    for bin in xray sing-box mieru caddy; do
+        if command -v "$bin" &>/dev/null || [[ -x "/usr/local/bin/$bin" ]]; then
+            local BIN_PATH; BIN_PATH=$(command -v "$bin" || echo "/usr/local/bin/$bin")
+            local VER; VER=$("$BIN_PATH" version 2>&1 | head -1 || echo "installed")
+            echo -e "    • ${BOLD}${bin}${NC}: ${GREEN}Installed${NC} (${VER})"
+        else
+            echo -e "    • ${BOLD}${bin}${NC}: ${YELLOW}Not installed in /usr/local/bin${NC}"
+        fi
+    done
+    echo ""
+}
+
+cmd_start() {
+    ensure_root
+    local TARGET="${1:-all}"
+    local MODE; MODE=$(get_panel_mode)
+
+    echo -e "${CYAN}Starting ProxPanel components (${TARGET})...${NC}"
+    if [[ "$MODE" == "docker" ]]; then
+        cd "$PANEL_DIR"
+        if [[ "$TARGET" == "all" ]]; then
+            docker compose up -d
+        else
+            docker compose start "$TARGET" 2>/dev/null || docker compose up -d "$TARGET"
+        fi
+    elif [[ "$MODE" == "systemd" ]]; then
+        if [[ "$TARGET" == "all" ]]; then
+            systemctl start postgresql redis proxpanel-master 2>/dev/null || true
+        else
+            systemctl start "$TARGET"
+        fi
+    fi
+
+    if [[ "$TARGET" == "all" || "$TARGET" == "node" || "$TARGET" == "worker" ]]; then
+        systemctl start proxpanel-node 2>/dev/null || true
+    fi
+    log "Start command sent for ${TARGET}"
+}
+
+cmd_stop() {
+    ensure_root
+    local TARGET="${1:-all}"
+    local MODE; MODE=$(get_panel_mode)
+
+    echo -e "${CYAN}Stopping ProxPanel components (${TARGET})...${NC}"
+    if [[ "$MODE" == "docker" ]]; then
+        cd "$PANEL_DIR"
+        if [[ "$TARGET" == "all" ]]; then
+            docker compose stop
+        else
+            docker compose stop "$TARGET"
+        fi
+    elif [[ "$MODE" == "systemd" ]]; then
+        if [[ "$TARGET" == "all" ]]; then
+            systemctl stop proxpanel-master 2>/dev/null || true
+        else
+            systemctl stop "$TARGET"
+        fi
+    fi
+
+    if [[ "$TARGET" == "all" || "$TARGET" == "node" || "$TARGET" == "worker" ]]; then
+        systemctl stop proxpanel-node 2>/dev/null || true
+    fi
+    log "Stop command sent for ${TARGET}"
+}
+
+cmd_restart() {
+    ensure_root
+    local TARGET="${1:-all}"
+    cmd_stop "$TARGET"
+    sleep 1
+    cmd_start "$TARGET"
+    log "Restart completed for ${TARGET}"
+}
+
+cmd_logs() {
+    local TARGET="${1:-server}"
+    shift || true
+    local EXTRA_ARGS="$*"
+    local MODE; MODE=$(get_panel_mode)
+
+    if [[ "$MODE" == "docker" ]]; then
+        cd "$PANEL_DIR"
+        case "$TARGET" in
+            all)    docker compose logs -f --tail=100 $EXTRA_ARGS ;;
+            panel|server) docker compose logs -f --tail=100 server $EXTRA_ARGS ;;
+            client) docker compose logs -f --tail=100 client $EXTRA_ARGS ;;
+            db|postgres) docker compose logs -f --tail=100 postgres $EXTRA_ARGS ;;
+            redis)  docker compose logs -f --tail=100 redis $EXTRA_ARGS ;;
+            caddy)  docker compose logs -f --tail=100 caddy $EXTRA_ARGS ;;
+            node|worker) journalctl -u proxpanel-node -f --no-tail -n 100 $EXTRA_ARGS ;;
+            *)      docker compose logs -f --tail=100 "$TARGET" $EXTRA_ARGS ;;
+        esac
+    else
+        case "$TARGET" in
+            node|worker) journalctl -u proxpanel-node -f -n 100 $EXTRA_ARGS ;;
+            master|server|panel) journalctl -u proxpanel-master -f -n 100 $EXTRA_ARGS ;;
+            *) journalctl -u "$TARGET" -f -n 100 $EXTRA_ARGS ;;
+        esac
+    fi
+}
+
+cmd_doctor() {
+    ensure_root
+    if [[ -f "${PANEL_DIR}/scripts/check.sh" ]]; then
+        bash "${PANEL_DIR}/scripts/check.sh"
+    elif [[ -f "/usr/local/bin/proxpanel-check" ]]; then
+        bash "/usr/local/bin/proxpanel-check"
+    else
+        # Fallback inline run
+        curl -fsSL https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/scripts/check.sh | bash
+    fi
+}
+
+cmd_reset_admin() {
+    ensure_root
+    echo -e "\n${CYAN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║           ProxPanel Admin Password Reset Tool              ║${NC}"
+    echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}\n"
+
+    local USERNAME=""
+    local PASSWORD=""
+    local EMAIL=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -u|--username) USERNAME="$2"; shift 2 ;;
+            -p|--password) PASSWORD="$2"; shift 2 ;;
+            -e|--email)    EMAIL="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [[ -z "$USERNAME" ]]; then
+        read -rp "  Enter Admin username [admin]: " USERNAME
+        USERNAME="${USERNAME:-admin}"
+    fi
+
+    if [[ -z "$PASSWORD" ]]; then
+        read -rsp "  Enter New Admin password: " PASSWORD
+        echo ""
+        [[ ${#PASSWORD} -lt 8 ]] && fail "Password must be at least 8 characters"
+    fi
+
+    if [[ -z "$EMAIL" ]]; then
+        read -rp "  Enter Admin email [admin@example.com]: " EMAIL
+        EMAIL="${EMAIL:-admin@example.com}"
+    fi
+
+    local MODE; MODE=$(get_panel_mode)
+    if [[ "$MODE" == "docker" ]]; then
+        cd "$PANEL_DIR"
+        echo -e "${CYAN}Applying new credentials via database seed...${NC}"
+        docker compose exec -T server npx tsx prisma/seed.ts \
+            --username "$USERNAME" \
+            --password "$PASSWORD" \
+            --email "$EMAIL"
+        log "Admin credentials successfully updated in Docker database!"
+    elif [[ -d "${PANEL_DIR}/server" ]]; then
+        cd "${PANEL_DIR}/server"
+        npx tsx prisma/seed.ts \
+            --username "$USERNAME" \
+            --password "$PASSWORD" \
+            --email "$EMAIL"
+        log "Admin credentials successfully updated in local database!"
+    else
+        fail "Could not find ProxPanel installation at ${PANEL_DIR}"
+    fi
+}
+
+cmd_update() {
+    ensure_root
+    echo -e "\n${CYAN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║            ProxPanel Zero-Downtime System Update           ║${NC}"
+    echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}\n"
+
+    local MODE; MODE=$(get_panel_mode)
+
+    # 1. Update Cores
+    echo -e "${CYAN}[1/3] Updating proxy binaries...${NC}"
+    local ARCH; ARCH=$(uname -m)
+    local ARCH_XRAY="64"
+    local ARCH_SING="amd64"
+    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        ARCH_XRAY="arm64-v8a"
+        ARCH_SING="arm64"
+    fi
+
+    # Xray update
+    local XRAY_TAG; XRAY_TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name' || echo "")
+    if [[ -n "$XRAY_TAG" && "$XRAY_TAG" != "null" ]]; then
+        wget -qO /tmp/xray.zip "https://github.com/XTLS/Xray-core/releases/download/${XRAY_TAG}/Xray-linux-${ARCH_XRAY}.zip" && \
+        unzip -qo /tmp/xray.zip xray -d /usr/local/bin/ && chmod +x /usr/local/bin/xray && rm -f /tmp/xray.zip
+        log "Xray updated to ${XRAY_TAG}"
+    fi
+
+    # sing-box update
+    local SING_TAG; SING_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name' || echo "")
+    if [[ -n "$SING_TAG" && "$SING_TAG" != "null" ]]; then
+        local SING_CLEAN="${SING_TAG#v}"
+        wget -qO /tmp/sing.tar.gz "https://github.com/SagerNet/sing-box/releases/download/${SING_TAG}/sing-box-${SING_CLEAN}-linux-${ARCH_SING}.tar.gz" && \
+        tar -xzf /tmp/sing.tar.gz -C /tmp/ && \
+        find /tmp -maxdepth 2 -name 'sing-box' -type f -exec mv {} /usr/local/bin/sing-box \; && \
+        chmod +x /usr/local/bin/sing-box && rm -rf /tmp/sing.tar.gz /tmp/sing-box-*
+        log "sing-box updated to ${SING_TAG}"
+    fi
+
+    # 2. Update Panel Source & Rebuild
+    if [[ "$MODE" == "docker" ]]; then
+        echo -e "${CYAN}[2/3] Updating Docker containers...${NC}"
+        cd "$PANEL_DIR"
+        # Download new source archive without overwriting .env and data
+        local TEMP_SRC="/tmp/proxpanel-update-$$"
+        mkdir -p "$TEMP_SRC"
+        curl -fsSL "https://github.com/Velio322/proxy-panel-v3/archive/refs/heads/main.tar.gz" | tar xz -C "$TEMP_SRC" --strip-components=1
+        cp -r "$TEMP_SRC/server" "$PANEL_DIR/"
+        cp -r "$TEMP_SRC/client" "$PANEL_DIR/"
+        cp "$TEMP_SRC/docker-compose.yml" "$PANEL_DIR/"
+        cp -r "$TEMP_SRC/scripts" "$PANEL_DIR/" 2>/dev/null || true
+        rm -rf "$TEMP_SRC"
+
+        docker compose build --parallel
+        docker compose up -d --remove-orphans
+
+        echo -e "${CYAN}[3/3] Syncing database schema...${NC}"
+        docker compose exec -T server npx prisma db push --skip-generate --accept-data-loss || true
+        log "Update finished successfully!"
+    fi
+
+    # 3. Update Node worker if present
+    if systemctl list-unit-files proxpanel-node.service &>/dev/null 2>&1; then
+        echo -e "${CYAN}Restarting ProxPanel Node Worker...${NC}"
+        systemctl restart proxpanel-node
+        log "Node Worker restarted"
+    fi
+}
+
+cmd_backup() {
+    ensure_root
+    mkdir -p "$BACKUP_DIR"
+    local TIMESTAMP; TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    local DUMP_FILE="${BACKUP_DIR}/proxpanel_backup_${TIMESTAMP}.sql"
+    local MODE; MODE=$(get_panel_mode)
+
+    echo -e "${CYAN}Creating ProxPanel PostgreSQL backup...${NC}"
+    if [[ "$MODE" == "docker" ]]; then
+        cd "$PANEL_DIR"
+        docker compose exec -T postgres pg_dump -U proxpanel proxpanel > "$DUMP_FILE"
+    else
+        pg_dump -U proxpanel -h 127.0.0.1 proxpanel > "$DUMP_FILE"
+    fi
+
+    gzip "$DUMP_FILE"
+    log "Backup saved: ${DUMP_FILE}.gz ($(du -h "${DUMP_FILE}.gz" | awk '{print $1}'))"
+}
+
+cmd_restore() {
+    ensure_root
+    local BACKUP_FILE="${1:-}"
+    [[ -z "$BACKUP_FILE" ]] && fail "Usage: vpnpanel restore <backup_file.sql.gz>"
+    [[ ! -f "$BACKUP_FILE" ]] && fail "File not found: $BACKUP_FILE"
+
+    echo -e "${YELLOW}WARNING: Restoring will overwrite existing database data!${NC}"
+    read -rp "Are you sure? (yes/N): " CONFIRM
+    [[ "$CONFIRM" != "yes" ]] && { echo "Aborted."; exit 0; }
+
+    local MODE; MODE=$(get_panel_mode)
+    echo -e "${CYAN}Restoring database from ${BACKUP_FILE}...${NC}"
+
+    if [[ "$BACKUP_FILE" == *.gz ]]; then
+        if [[ "$MODE" == "docker" ]]; then
+            gunzip -c "$BACKUP_FILE" | docker compose -f "${PANEL_DIR}/docker-compose.yml" exec -T postgres psql -U proxpanel proxpanel
+        else
+            gunzip -c "$BACKUP_FILE" | psql -U proxpanel -h 127.0.0.1 proxpanel
+        fi
+    else
+        if [[ "$MODE" == "docker" ]]; then
+            cat "$BACKUP_FILE" | docker compose -f "${PANEL_DIR}/docker-compose.yml" exec -T postgres psql -U proxpanel proxpanel
+        else
+            cat "$BACKUP_FILE" | psql -U proxpanel -h 127.0.0.1 proxpanel
+        fi
+    fi
+    log "Database restored successfully!"
+}
+
+cmd_bbr() {
+    ensure_root
+    local CURR; CURR=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "cubic")
+    echo -e "Current TCP congestion control: ${BOLD}${CURR}${NC}"
+
+    if [[ "$CURR" != "bbr" ]]; then
+        echo -e "${CYAN}Enabling BBR congestion control...${NC}"
+        modprobe tcp_bbr 2>/dev/null || true
+        echo "tcp_bbr" >> /etc/modules-load.d/bbr.conf 2>/dev/null || true
+        sysctl -w net.core.default_qdisc=fq
+        sysctl -w net.ipv4.tcp_congestion_control=bbr
+        log "BBR successfully enabled!"
+    else
+        log "BBR is already active."
+    fi
+}
+
+cmd_info() {
+    echo -e "\n${CYAN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║              ProxPanel v3 Connection & Config              ║${NC}"
+    echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}\n"
+
+    if [[ -f "${PANEL_DIR}/.env" ]]; then
+        # shellcheck source=/dev/null
+        local PANEL_URL; PANEL_URL=$(grep '^API_URL=' "${PANEL_DIR}/.env" | cut -d= -f2- || echo "https://localhost")
+        local RPC_SECRET; RPC_SECRET=$(grep '^NODE_RPC_SECRET=' "${PANEL_DIR}/.env" | cut -d= -f2- || echo "")
+        echo -e "  • Dashboard URL:   ${BOLD}${PANEL_URL}${NC}"
+        echo -e "  • Master API:      ${BOLD}http://127.0.0.1:3000${NC}"
+        echo -e "  • Node RPC Secret: ${BOLD}${RPC_SECRET}${NC}"
+        echo -e "  • Web/Proxy Port:  ${BOLD}443 (TCP/UDP)${NC}"
+        echo -e "  • Node API Port:   ${BOLD}2087 (TCP)${NC}\n"
+    elif [[ -f "${NODE_DIR}/server/.env" ]]; then
+        local MASTER_URL; MASTER_URL=$(grep '^MASTER_URL=' "${NODE_DIR}/server/.env" | cut -d= -f2- || echo "")
+        echo -e "  • Mode:            ${BOLD}Worker Node${NC}"
+        echo -e "  • Master URL:      ${BOLD}${MASTER_URL}${NC}"
+        echo -e "  • Worker Port:     ${BOLD}2087${NC}\n"
+    fi
+}
+
+cmd_help() {
+    echo -e "\n${CYAN}${BOLD}ProxPanel v3 CLI Helper${NC} — Usage:\n"
+    echo -e "  ${BOLD}vpnpanel status${NC}           Show system health, running containers, memory and active connections"
+    echo -e "  ${BOLD}vpnpanel doctor${NC}           Run automated health check & diagnostic validation suite"
+    echo -e "  ${BOLD}vpnpanel start [service]${NC}  Start all or specified service (panel, worker, db, caddy)"
+    echo -e "  ${BOLD}vpnpanel stop [service]${NC}   Stop all or specified service"
+    echo -e "  ${BOLD}vpnpanel restart [srv]${NC}    Restart all or specified service"
+    echo -e "  ${BOLD}vpnpanel logs [service]${NC}   View and follow real-time logs (server, worker, db, caddy)"
+    echo -e "  ${BOLD}vpnpanel update${NC}           Fast zero-downtime update of code and proxy core binaries"
+    echo -e "  ${BOLD}vpnpanel reset-admin${NC}      Reset Super Admin credentials in the database"
+    echo -e "  ${BOLD}vpnpanel info${NC}             Print panel URL, node RPC secrets, and port bindings"
+    echo -e "  ${BOLD}vpnpanel backup${NC}           Create PostgreSQL database dump archive"
+    echo -e "  ${BOLD}vpnpanel restore <file>${NC}   Restore PostgreSQL database from backup"
+    echo -e "  ${BOLD}vpnpanel bbr${NC}              Check and enable BBR TCP congestion control"
+    echo -e "  ${BOLD}vpnpanel help${NC}             Display this help message\n"
+}
+
+# ──── Entry Point ────
+ACTION="${1:-status}"
+shift || true
+
+case "$ACTION" in
+    status)         cmd_status ;;
+    start)          cmd_start "${1:-all}" ;;
+    stop)           cmd_stop "${1:-all}" ;;
+    restart)        cmd_restart "${1:-all}" ;;
+    logs|log)       cmd_logs "${1:-server}" "$@" ;;
+    doctor|check)   cmd_doctor ;;
+    update|upgrade) cmd_update ;;
+    reset-admin)    cmd_reset_admin "$@" ;;
+    info)           cmd_info ;;
+    backup)         cmd_backup ;;
+    restore)        cmd_restore "${1:-}" ;;
+    bbr)            cmd_bbr ;;
+    help|--help|-h) cmd_help ;;
+    *)              fail "Unknown command '$ACTION'. Run 'vpnpanel help' for list of commands." ;;
+esac

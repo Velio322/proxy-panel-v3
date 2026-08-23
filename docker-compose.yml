@@ -18,6 +18,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     networks:
       - proxpanel
 
@@ -33,6 +38,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     networks:
       - proxpanel
 
@@ -53,13 +63,18 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 10s
       timeout: 5s
-      start_period: 90s
+      start_period: 60s
       retries: 10
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     networks:
       - proxpanel
 
@@ -69,6 +84,11 @@ services:
       dockerfile: Dockerfile
     container_name: proxpanel-client
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     networks:
       - proxpanel
 
@@ -90,6 +110,11 @@ services:
         condition: service_healthy
       client:
         condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     networks:
       - proxpanel
 

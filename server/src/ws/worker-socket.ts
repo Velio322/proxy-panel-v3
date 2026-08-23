@@ -87,12 +87,14 @@ export class WorkerSocketManager {
 
       ws.on('close', (code, reason) => {
         console.log(`[WS] Worker disconnected: ${node.name} (Code: ${code}, Reason: ${reason})`);
-        this.connections.delete(node.id);
-        
-        prisma.node.update({
-          where: { id: node.id },
-          data: { status: 'OFFLINE' }
-        }).catch(() => {});
+        // Only remove and mark OFFLINE if this is still the active socket
+        if (this.connections.get(node.id)?.ws === ws) {
+          this.connections.delete(node.id);
+          prisma.node.update({
+            where: { id: node.id },
+            data: { status: 'OFFLINE' }
+          }).catch(() => {});
+        }
       });
 
       ws.on('error', (err) => {

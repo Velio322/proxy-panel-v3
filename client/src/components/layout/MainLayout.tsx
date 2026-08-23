@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useI18n } from '@/i18n';
 import { useAuthStore } from '@/lib/store';
 import { Sidebar } from './Sidebar';
-import { Menu, Bell, Search, ChevronRight } from 'lucide-react';
+import { Menu, ShieldCheck, ChevronRight } from 'lucide-react';
 
 const PAGE_TITLES: Record<string, string> = {
   '/':           'nav.dashboard',
@@ -29,13 +29,12 @@ export function MainLayout() {
   const pagePath = location.pathname === '/' ? ['Dashboard'] : ['Dashboard', pageTitle];
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div className="h-screen flex overflow-hidden bg-bg text-fg">
 
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 lg:hidden"
-          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          className="fixed inset-0 z-40 lg:hidden bg-black/60 backdrop-blur-sm transition-opacity"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -43,98 +42,74 @@ export function MainLayout() {
       {/* Sidebar */}
       <aside
         className={`
-          fixed inset-y-0 left-0 z-50 w-56 flex flex-col
+          fixed inset-y-0 left-0 z-50 w-64 flex flex-col
           lg:relative lg:translate-x-0
           transform transition-transform duration-200 ease-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
-        style={{ borderRight: '1px solid var(--border)' }}>
+      >
         <Sidebar onNavigate={() => setSidebarOpen(false)} />
       </aside>
 
-      {/* Main content */}
+      {/* Main content container */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Top bar */}
-        <header
-          className="h-13 flex items-center px-4 gap-3 shrink-0"
-          style={{
-            background: 'var(--surface)',
-            borderBottom: '1px solid var(--border)',
-            height: '52px',
-          }}>
+        {/* Top Navigation Bar */}
+        <header className="h-16 flex items-center justify-between px-6 shrink-0 bg-surface/80 backdrop-blur-md border-b border-border z-10">
 
-          {/* Mobile menu btn */}
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="lg:hidden p-1.5 rounded-md"
-            style={{ color: 'var(--fg-muted)' }}>
-            <Menu size={17} />
-          </button>
-
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-[13px]">
-            {pagePath.map((segment, i) => (
-              <span key={i} className="flex items-center gap-1.5">
-                {i > 0 && <ChevronRight size={11} style={{ color: 'var(--fg-subtle)' }} />}
-                <span
-                  style={{
-                    color: i === pagePath.length - 1 ? 'var(--fg)' : 'var(--fg-muted)',
-                    fontWeight: i === pagePath.length - 1 ? 600 : 400,
-                  }}>
-                  {segment}
-                </span>
-              </span>
-            ))}
-          </div>
-
-          <div className="flex-1" />
-
-          {/* Right controls */}
-          <div className="flex items-center gap-1">
-
-            {/* Search hint */}
-            <div
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-md text-[12px] cursor-pointer"
-              style={{
-                background: 'var(--bg-raised)',
-                border: '1px solid var(--border)',
-                color: 'var(--fg-subtle)',
-              }}>
-              <Search size={13} />
-              <span>Search...</span>
-              <kbd className="px-1 py-0.5 rounded text-[10px] font-mono"
-                style={{ background: 'var(--bg-sunken)', color: 'var(--fg-subtle)' }}>
-                ⌘K
-              </kbd>
-            </div>
-
-            {/* Notifications */}
+          {/* Left section: mobile toggle + breadcrumbs */}
+          <div className="flex items-center gap-3">
             <button
-              className="relative p-2 rounded-md"
-              style={{ color: 'var(--fg-muted)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-raised)'; e.currentTarget.style.color = 'var(--fg)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--fg-muted)'; }}>
-              <Bell size={16} />
-              <span className="notif-dot" />
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 rounded-xl text-fg-muted hover:text-fg hover:bg-surface-hover transition-colors"
+            >
+              <Menu size={20} />
             </button>
 
-            {/* User avatar */}
-            <div
-              className="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-bold ml-1"
-              style={{
-                background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-                color: '#fff',
-                boxShadow: '0 2px 6px var(--accent-glow)',
-              }}>
+            {/* Breadcrumbs */}
+            <nav className="flex items-center gap-2 text-xs font-medium">
+              {pagePath.map((segment, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  {i > 0 && <ChevronRight size={14} className="text-fg-subtle" />}
+                  <span
+                    className={
+                      i === pagePath.length - 1
+                        ? 'text-fg font-semibold'
+                        : 'text-fg-muted hover:text-fg transition-colors'
+                    }
+                  >
+                    {segment}
+                  </span>
+                </div>
+              ))}
+            </nav>
+          </div>
+
+          {/* Right section: System Status indicator, quick actions */}
+          <div className="flex items-center gap-3">
+
+            {/* Master Server Online Indicator */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-medium shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+              <span className="font-mono text-[11px] font-semibold">Master Active</span>
+            </div>
+
+            {/* Security Shield Badge */}
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface border border-border text-fg-muted text-xs">
+              <ShieldCheck size={14} className="text-indigo-400" />
+              <span className="font-mono text-[11px]">Xray v1.8+</span>
+            </div>
+
+            {/* User Avatar */}
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold bg-gradient-to-tr from-indigo-600 to-sky-400 text-white shadow-md shadow-indigo-500/20">
               {user?.username?.[0]?.toUpperCase() || 'A'}
             </div>
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-5 max-w-[1440px] mx-auto animate-slide-up">
+        {/* Page content scroll area */}
+        <main className="flex-1 overflow-y-auto bg-bg/50">
+          <div className="p-6 max-w-7xl mx-auto animate-fade-in">
             <Outlet />
           </div>
         </main>

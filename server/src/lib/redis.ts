@@ -32,11 +32,16 @@ export async function closeRedis(): Promise<void> {
 // Cache helpers
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const data = await getRedis().get(key);
-  return data ? JSON.parse(data) : null;
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data as any;
+  }
 }
 
 export async function cacheSet(key: string, value: any, ttlSeconds?: number): Promise<void> {
-  const serialized = JSON.stringify(value);
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   if (ttlSeconds) {
     await getRedis().setex(key, ttlSeconds, serialized);
   } else {
@@ -49,9 +54,22 @@ export async function cacheDel(key: string): Promise<void> {
 }
 
 export async function cacheInvalidatePattern(pattern: string): Promise<void> {
-  const keys = await getRedis().keys(pattern);
-  if (keys.length > 0) {
-    await getRedis().del(...keys);
+  const r = getRedis();
+  const stream = r.scanStream({ match: pattern, count: 100 });
+  const keysToDelete: string[] = [];
+
+  for await (const resultKeys of stream) {
+    if (resultKeys.length > 0) {
+      keysToDelete.push(...resultKeys);
+    }
+  }
+
+  if (keysToDelete.length > 0) {
+    const CHUNK_SIZE = 500;
+    for (let i = 0; i < keysToDelete.length; i += CHUNK_SIZE) {
+      const chunk = keysToDelete.slice(i, i + CHUNK_SIZE);
+      await r.del(...chunk);
+    }
   }
 }
 

@@ -69,19 +69,41 @@ router.get('/config', async (req: AuthRequest, res: Response) => {
 
 async function performBackup(logId: string, type: string, destination: string) {
   const prisma = getPrisma();
+  const os = require('os');
+  const path = require('path');
+  const fs = require('fs');
+  const { execFileSync } = require('child_process');
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `proxpanel-backup-${type.toLowerCase()}-${timestamp}.sql`;
+  const filePath = path.join(os.tmpdir(), filename);
 
   try {
     // Export database
-    const { execSync } = require('child_process');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `proxpanel-backup-${type.toLowerCase()}-${timestamp}.sql`;
+    try {
+      const output = execFileSync('pg_dump', [config.database.url, '--clean', '--if-exists'], {
+        timeout: 300000,
+        maxBuffer: 100 * 1024 * 1024,
+      });
+      fs.writeFileSync(filePath, output);
+    } catch {
+      // Fallback dump as JSON if pg_dump CLI is unavailable in environment
+      const [users, inbounds, nodes, clients, plans, settings] = await Promise.all([
+        prisma.user.findMany(),
+        prisma.inbound.findMany(),
+        prisma.node.findMany(),
+        prisma.client.findMany(),
+        prisma.plan.findMany(),
+        prisma.systemSetting.findMany().catch(() => []),
+      ]);
+      const jsonDump = JSON.stringify(
+        serializeBigInt({ version: '2.0.0', timestamp, users, inbounds, nodes, clients, plans, settings }),
+        null,
+        2
+      );
+      fs.writeFileSync(filePath, jsonDump, 'utf-8');
+    }
 
-    execSync(`pg_dump ${config.database.url} > /tmp/${filename}`, {
-      timeout: 300000,
-    });
-
-    const fs = require('fs');
-    const filePath = `/tmp/${filename}`;
     const stats = fs.statSync(filePath);
 
     await prisma.backupLog.update({
@@ -102,10 +124,9 @@ async function performBackup(logId: string, type: string, destination: string) {
         { source: filePath },
         { caption: `ProxPanel backup: ${type} (${(stats.size / 1024 / 1024).toFixed(2)} MB)` }
       );
+      // Clean up temp file only for remote upload destinations
+      try { fs.unlinkSync(filePath); } catch {}
     }
-
-    // Cleanup
-    fs.unlinkSync(filePath);
   } catch (error: any) {
     await prisma.backupLog.update({
       where: { id: logId },

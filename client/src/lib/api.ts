@@ -306,8 +306,10 @@ export const resellersApi = {
 };
 
 export const backupApi = {
-  run: () => api.post('/backup/run'),
-  getLogs: () => api.get('/backup/logs'),
+  trigger: (data?: { type?: string; destination?: string }) => api.post('/backup/trigger', data || {}),
+  run: () => api.post('/backup/trigger'),
+  getLogs: (params?: { page?: number; limit?: number }) => api.get('/backup/logs', { params }),
+  getConfig: () => api.get('/backup/config'),
 };
 
 export default api;

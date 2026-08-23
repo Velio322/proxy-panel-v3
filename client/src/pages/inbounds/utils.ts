@@ -1,13 +1,13 @@
 export function protocolColor(p: string): string {
   const map: Record<string, string> = {
-    VLESS: 'bg-blue-50 text-blue-600 border-blue-100',
-    VMESS: 'bg-cyan-50 text-cyan-600 border-cyan-100',
-    TROJAN: 'bg-rose-50 text-rose-600 border-rose-100',
-    SHADOWSOCKS: 'bg-zinc-50 text-zinc-600 border-zinc-200',
-    HYSTERIA2: 'bg-orange-50 text-orange-600 border-orange-100',
-    NAIVEPROXY: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    MIERU: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-    TUIC: 'bg-pink-50 text-pink-600 border-pink-100',
+    VLESS: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+    VMESS: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+    TROJAN: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+    SHADOWSOCKS: 'bg-slate-500/15 text-slate-300 border-slate-500/30',
+    HYSTERIA2: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    NAIVEPROXY: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    MIERU: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    TUIC: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
   };
-  return map[p] || 'bg-zinc-50 text-zinc-600 border-zinc-200';
+  return map[p] || 'bg-surface border-border text-fg-muted';
 }

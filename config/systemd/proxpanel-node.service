@@ -1,0 +1,36 @@
+[Unit]
+Description=ProxPanel Node Proxy Worker
+Documentation=https://github.com/Velio322/proxy-panel-v3
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proxpanel-node/server
+EnvironmentFile=/opt/proxpanel-node/server/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/worker/index.js
+
+# Reliability & Auto-Restart
+Restart=always
+RestartSec=3s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# High-Concurrency Resource Limits
+LimitNOFILE=1048576
+LimitNPROC=524288
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
+
+# Security & Sandboxing
+PrivateTmp=true
+NoNewPrivileges=false
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proxpanel-node
+
+[Install]
+WantedBy=multi-user.target

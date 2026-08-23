@@ -9,15 +9,17 @@ export class NodeService {
     const node = await prisma.node.findUnique({ where: { id: nodeId } });
     if (!node) throw new Error('Node not found');
 
+    const startTime = Date.now();
     try {
       const response = await nodeGet(node.host, node.apiPort, '/api/status', node.secret);
+      const pingMs = Date.now() - startTime;
 
       await prisma.node.update({
         where: { id: nodeId },
         data: {
           status: 'ONLINE',
           lastCheckAt: new Date(),
-          lastPingMs: Date.now() - Date.now(),
+          lastPingMs: pingMs,
           version: response.version,
           xrayVersion: response.xrayRunning ? response.version : null,
           singboxVersion: response.singboxRunning ? response.version : null,
@@ -26,7 +28,7 @@ export class NodeService {
 
       nodeStatus.set({ node_id: node.id, node_name: node.name }, 1);
 
-      return { nodeId, status: 'ONLINE', ...response };
+      return { nodeId, status: 'ONLINE', pingMs, ...response };
     } catch {
       await prisma.node.update({
         where: { id: nodeId },
@@ -56,6 +58,14 @@ export class NodeService {
     if (!node) throw new Error('Node not found');
 
     try {
+      // Prefer active WebSocket connection for pushing configs
+      const { getWorkerSocketManager } = await import('../ws/worker-socket');
+      const wsManager = getWorkerSocketManager();
+      if (wsManager.isNodeOnline(nodeId)) {
+        await wsManager.pushConfig(nodeId);
+        return true;
+      }
+
       const inbounds = node.inbounds
         .filter((i) => i.enable)
         .map((inbound) => ({

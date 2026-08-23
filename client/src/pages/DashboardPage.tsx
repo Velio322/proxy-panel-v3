@@ -10,11 +10,11 @@ import { QuickActionsPanel } from './dashboard/components/QuickActionsPanel';
 import { TrafficChart } from './dashboard/components/TrafficChart';
 
 const ACTION_COLORS: Record<string, string> = {
-  LOGIN:  'var(--success)',
-  LOGOUT: 'var(--fg-subtle)',
-  CREATE: 'var(--accent)',
-  UPDATE: 'var(--warning)',
-  DELETE: 'var(--danger)',
+  LOGIN:  '#10b981',
+  LOGOUT: '#64748b',
+  CREATE: '#6366f1',
+  UPDATE: '#f59e0b',
+  DELETE: '#ef4444',
 };
 
 export function DashboardPage() {
@@ -57,167 +57,182 @@ export function DashboardPage() {
     {
       label: t('dashboard.totalClients'),
       value: overview.clients.total,
-      sub: `${overview.clients.active} active, ${overview.clients.banned} banned`,
-      icon: <Users size={15} />,
-      accentColor: 'var(--accent)',
+      sub: `${overview.clients.active} active · ${overview.clients.banned} banned`,
+      icon: <Users size={16} />,
+      accentColor: '#6366f1',
     },
     {
       label: t('dashboard.nodesOnline'),
       value: `${overview.nodes.online}/${overview.nodes.total}`,
       sub: `${overview.inbounds.total} inbounds configured`,
-      icon: <Server size={15} />,
-      accentColor: 'var(--success)',
+      icon: <Server size={16} />,
+      accentColor: '#10b981',
     },
     {
       label: t('dashboard.todayTraffic'),
       value: formatBytes(todayUp + todayDown),
       sub: `↑ ${formatBytes(todayUp)} · ↓ ${formatBytes(todayDown)}`,
-      icon: <Activity size={15} />,
-      accentColor: '#06b6d4',
+      icon: <Activity size={16} />,
+      accentColor: '#38bdf8',
     },
     {
       label: t('dashboard.monthTraffic'),
       value: formatBytes(monthUp + monthDown),
       sub: `Expiring today: ${overview.expiringToday || 0}`,
-      icon: <TrendingUp size={15} />,
-      accentColor: 'var(--accent-2)',
+      icon: <TrendingUp size={16} />,
+      accentColor: '#f59e0b',
     },
   ] : [];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-[18px] font-bold" style={{ color: 'var(--fg)' }}>
+          <h1 className="text-xl font-extrabold text-fg tracking-tight flex items-center gap-2">
             {t('dashboard.title')}
+            <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-accent-muted text-accent border border-accent/20">
+              Live Core
+            </span>
           </h1>
-          <p className="text-[13px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
-            {t('dashboard.subtitle')}
+          <p className="text-xs text-fg-muted mt-1">
+            Real-time proxy fleet overview, active traffic and system health
           </p>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-[12px]"
-          style={{ color: 'var(--fg-muted)' }}>
-          <Clock size={13} />
-          {new Date().toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}
+        <div className="flex items-center gap-2 text-xs text-fg-subtle px-3 py-1.5 rounded-xl bg-surface border border-border">
+          <Clock size={13} className="text-accent" />
+          <span>{new Date().toLocaleDateString('en', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPI Cards Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => <KPISkeleton key={i} />)}
         </div>
       ) : overview ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((kpi) => (
             <KPICard key={kpi.label} {...kpi} />
           ))}
         </div>
       ) : null}
 
-      {/* Chart + Health */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Main Charts & Telemetry Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <TrafficChart data={trafficChart || []} period={trafficPeriod} onPeriodChange={setTrafficPeriod} />
         {nodes && <SystemHealthCard nodes={nodes} />}
       </div>
 
-      {/* Bottom row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Bottom Insights Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Top Clients */}
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--fg)' }}>
-              {t('dashboard.topClients')}
-            </h3>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-              style={{ background: 'var(--bg-raised)', color: 'var(--fg-subtle)', border: '1px solid var(--border)' }}>
-              7D
-            </span>
-          </div>
-          <div className="space-y-3">
-            {topClients && topClients.length > 0
-              ? topClients.map((tc: any, i: number) => {
-                const total = Number(tc._sum?.upload || 0) + Number(tc._sum?.download || 0);
-                const max = Number(topClients[0]._sum?.upload || 0) + Number(topClients[0]._sum?.download || 0) || 1;
-                const pct = (total / max) * 100;
-                return (
-                  <div key={i}>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-[11px] font-bold w-4 shrink-0"
-                        style={{ color: i < 3 ? 'var(--accent)' : 'var(--fg-subtle)' }}>
-                        {i + 1}
-                      </span>
-                      <span className="text-[13px] font-medium flex-1 truncate" style={{ color: 'var(--fg)' }}>
-                        {tc.client?.username || 'Unknown'}
-                      </span>
-                      <span className="text-[11px] font-mono shrink-0" style={{ color: 'var(--fg-muted)' }}>
-                        {formatBytes(total)}
-                      </span>
+        {/* Top Clients Ranking */}
+        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-fg tracking-tight">
+                  {t('dashboard.topClients')}
+                </h3>
+                <p className="text-xs text-fg-subtle mt-0.5">Top consumers in past 7 days</p>
+              </div>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-bg-sunken text-fg-subtle border border-border">
+                7D
+              </span>
+            </div>
+            <div className="space-y-3.5">
+              {topClients && topClients.length > 0 ? (
+                topClients.map((tc: any, i: number) => {
+                  const total = Number(tc._sum?.upload || 0) + Number(tc._sum?.download || 0);
+                  const max = Number(topClients[0]._sum?.upload || 0) + Number(topClients[0]._sum?.download || 0) || 1;
+                  const pct = Math.min((total / max) * 100, 100);
+                  return (
+                    <div key={i} className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className={`w-5 font-mono font-bold ${i < 3 ? 'text-accent' : 'text-fg-subtle'}`}>
+                          #{i + 1}
+                        </span>
+                        <span className="font-semibold text-fg flex-1 truncate">
+                          {tc.client?.username || 'Unknown'}
+                        </span>
+                        <span className="font-mono text-fg-muted font-medium">
+                          {formatBytes(total)}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-bg-sunken rounded-full overflow-hidden border border-border/50">
+                        <div
+                          className="h-full bg-gradient-to-r from-indigo-500 to-sky-400 rounded-full transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="ml-6 progress-bar">
-                      <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })
-              : (
-                <div className="py-6 text-center text-[13px]" style={{ color: 'var(--fg-subtle)' }}>
+                  );
+                })
+              ) : (
+                <div className="py-12 text-center text-xs text-fg-subtle">
                   {t('dashboard.noData')}
                 </div>
               )}
+            </div>
           </div>
         </div>
 
-        {/* Recent Activity */}
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--fg)' }}>
-              {t('dashboard.recentActivity')}
-            </h3>
-            <ArrowUpRight size={14} style={{ color: 'var(--fg-subtle)' }} />
-          </div>
-          <div className="space-y-3">
-            {recentAudit && recentAudit.length > 0
-              ? recentAudit.map((log: any) => {
-                const actionColor = ACTION_COLORS[log.action] || 'var(--fg-subtle)';
-                return (
-                  <div key={log.id} className="flex items-start gap-2.5">
-                    <div className="mt-1.5 shrink-0">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: actionColor }} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px]" style={{ color: 'var(--fg)' }}>
-                        <span className="font-semibold">{log.user?.username || 'System'}</span>
-                        {' '}
-                        <span className="font-medium lowercase" style={{ color: actionColor }}>{log.action}</span>
-                        {' '}
-                        <span style={{ color: 'var(--fg-muted)' }}>{log.resource}</span>
+        {/* Recent Audit Stream */}
+        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-fg tracking-tight">
+                  {t('dashboard.recentActivity')}
+                </h3>
+                <p className="text-xs text-fg-subtle mt-0.5">Audit trail & admin operations</p>
+              </div>
+              <ArrowUpRight size={15} className="text-fg-subtle" />
+            </div>
+            <div className="space-y-3">
+              {recentAudit && recentAudit.length > 0 ? (
+                recentAudit.map((log: any) => {
+                  const actionColor = ACTION_COLORS[log.action] || '#64748b';
+                  return (
+                    <div key={log.id} className="flex items-start gap-3 p-2 rounded-xl hover:bg-surface/50 transition-colors">
+                      <div
+                        className="w-2 h-2 rounded-full mt-1.5 shrink-0 shadow-sm"
+                        style={{ background: actionColor, boxShadow: `0 0 6px ${actionColor}80` }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium text-fg truncate">
+                          <strong className="text-fg font-semibold">{log.user?.username || 'System'}</strong>{' '}
+                          <span style={{ color: actionColor }} className="font-bold font-mono text-[11px] uppercase">
+                            {log.action}
+                          </span>{' '}
+                          <span className="text-fg-muted">{log.resource}</span>
+                        </div>
+                        <div className="text-[10px] text-fg-subtle mt-0.5 flex items-center gap-1.5">
+                          <Clock size={10} />
+                          <span>
+                            {new Date(log.createdAt).toLocaleString('en', {
+                              hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric'
+                            })}
+                          </span>
+                          {log.ip && (
+                            <>
+                              <span>·</span>
+                              <span className="font-mono">{log.ip}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-[11px] mt-0.5 flex items-center gap-1.5"
-                        style={{ color: 'var(--fg-subtle)' }}>
-                        <Clock size={10} />
-                        {new Date(log.createdAt).toLocaleString('en', {
-                          hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric'
-                        })}
-                        {log.ip && (
-                          <>
-                            <span>·</span>
-                            <span className="font-mono">{log.ip}</span>
-                          </>
-                        )}
-                      </div>
                     </div>
-                  </div>
-                );
-              })
-              : (
-                <div className="py-6 text-center text-[13px]" style={{ color: 'var(--fg-subtle)' }}>
+                  );
+                })
+              ) : (
+                <div className="py-12 text-center text-xs text-fg-subtle">
                   {t('dashboard.noActivity')}
                 </div>
               )}
+            </div>
           </div>
         </div>
 

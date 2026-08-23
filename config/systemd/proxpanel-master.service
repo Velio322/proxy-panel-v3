@@ -1,0 +1,37 @@
+[Unit]
+Description=ProxPanel Master Panel & API Daemon
+Documentation=https://github.com/Velio322/proxy-panel-v3
+After=network-online.target postgresql.service redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/proxpanel/server
+EnvironmentFile=/opt/proxpanel/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/master/index.js
+
+# Reliability & Auto-Restart
+Restart=always
+RestartSec=3s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# High-Concurrency Resource Limits
+LimitNOFILE=1048576
+LimitNPROC=524288
+
+# Security & Sandboxing
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+NoNewPrivileges=false
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proxpanel-master
+
+[Install]
+WantedBy=multi-user.target
