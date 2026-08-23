@@ -111,6 +111,7 @@ safe_read() {
         fi
     fi
     eval "$var_name=\"\$val\""
+    return 0
 }
 
 # ──── CLI Argument Parsing ────
@@ -250,6 +251,7 @@ root       soft    nproc           524288
 root       hard    nproc           524288
 EOF
     log "Security limits (nofile = 1048576) configured"
+    return 0
 }
 
 configure_firewall() {
@@ -273,6 +275,7 @@ configure_firewall() {
         echo "y" | ufw enable >/dev/null 2>&1 || true
         log "UFW Firewall configured (SSH: ${SSH_PORT}, 80, 443 TCP/UDP, 2087)"
     fi
+    return 0
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -370,7 +373,10 @@ download_proxy_cores() {
     fi
     if [[ -x /usr/local/bin/mieru ]]; then
         log "Mieru ready: $(/usr/local/bin/mieru version 2>&1 | head -1 || echo 'mieru')"
+    else
+        log "Mieru protocol handled via sing-box"
     fi
+    return 0
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -397,6 +403,7 @@ install_cli_tools() {
     chmod +x /usr/local/bin/proxpanel-check 2>/dev/null || true
     ln -sf /usr/local/bin/vpnpanel /usr/local/bin/proxpanel 2>/dev/null || true
     log "CLI 'vpnpanel' and 'proxpanel' installed to /usr/local/bin"
+    return 0
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -673,6 +680,7 @@ EOF
         echo -e ""
     fi
     echo -e "  Management CLI:  ${CYAN}vpnpanel status | logs | doctor | help${NC}\n"
+    return 0
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -797,6 +805,7 @@ EOF
     echo -e "  Master URL:   ${BOLD}${MASTER_URL}${NC}"
     echo -e "  Worker Port:  ${BOLD}2087${NC}"
     echo -e "  CLI Tool:     ${CYAN}vpnpanel status | logs node | doctor${NC}\n"
+    return 0
 }
 
 # ══════════════════════════════════════════════════════════════
