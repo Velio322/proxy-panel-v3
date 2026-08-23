@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
@@ -29,6 +29,7 @@ import { startScheduler } from '../services/scheduler';
 import { getTrafficBatcher } from '../lib/traffic-batcher';
 import { createServer } from 'http';
 import { getWorkerSocketManager } from '../ws/worker-socket';
+import { seedDatabase } from '../seed';
 
 const app = express();
 const server = createServer(app);
@@ -153,6 +154,17 @@ async function startServer() {
       const prisma = getPrisma();
       await prisma.$connect();
       console.log('[DB] Connected to PostgreSQL');
+
+      try {
+        const userCount = await prisma.user.count();
+        if (userCount === 0) {
+          console.log('[Master] Initializing fresh database with admin user and default settings...');
+          await seedDatabase();
+        }
+      } catch (err: any) {
+        console.warn('[Master] Warning: Automatic database seed check skipped:', err.message);
+      }
+
       break;
     } catch (error: any) {
       retries++;

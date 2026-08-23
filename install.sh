@@ -616,6 +616,9 @@ CRYPTOPAY_TOKEN=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 BACKUP_ENABLED=false
+INITIAL_ADMIN_USER=${ADMIN_USER}
+INITIAL_ADMIN_PASSWORD=${ADMIN_PASS}
+INITIAL_ADMIN_EMAIL=${ADMIN_EMAIL}
 EOF
 
     # Generate Caddyfile according to selected access type
@@ -728,11 +731,30 @@ EOF
 
     # ──── Seed SuperAdmin User ────
     step "PANEL 6/7" "Creating super admin user in database..."
-    docker compose exec -T server npx tsx prisma/seed.ts \
+    if docker compose exec -T server node dist/seed.js \
         --username "$ADMIN_USER" \
         --password "$ADMIN_PASS" \
-        --email "$ADMIN_EMAIL" 2>&1 | tail -5
-    log "Super admin user created"
+        --email "$ADMIN_EMAIL" 2>&1 | tail -5; then
+        log "Super admin user created (${ADMIN_USER})"
+    else
+        warn "Direct seed command failed, applying credentials fallback..."
+        docker compose exec -T server node -e "
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const prisma = new PrismaClient();
+async function run() {
+  const hash = await bcrypt.hash(process.argv[2], 12);
+  await prisma.user.upsert({
+    where: { username: process.argv[1] },
+    update: { password: hash, role: 'SUPER_ADMIN' },
+    create: { username: process.argv[1], password: hash, email: process.argv[3], role: 'SUPER_ADMIN', language: 'en' }
+  });
+  console.log('[Fallback] Admin user ready:', process.argv[1]);
+}
+run().catch(console.error).finally(() => prisma.\$disconnect());
+" "$ADMIN_USER" "$ADMIN_PASS" "$ADMIN_EMAIL"
+        log "Super admin user configured via fallback"
+    fi
 
     # ──── Run Health Check ────
     step "PANEL 7/7" "Running diagnostic health check..."

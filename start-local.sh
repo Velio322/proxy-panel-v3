@@ -14,7 +14,7 @@ export JWT_SECRET="dev-jwt-secret-not-for-production"
 cd /mnt/f/proxy-panel-v3/server
 # Ensure Prisma schema is synchronized and admin user exists
 node ./node_modules/prisma/build/index.js db push --skip-generate
-node ./node_modules/tsx/dist/cli.mjs prisma/seed.ts --username admin --password admin123
+node ./node_modules/tsx/dist/cli.mjs src/seed.ts --username admin --password admin123
 
 echo "=== Starting ProxPanel Master Server on port 3001 ==="
 node ./node_modules/tsx/dist/cli.mjs watch src/master/index.ts &

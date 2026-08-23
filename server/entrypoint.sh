@@ -36,5 +36,8 @@ npx prisma db push --skip-generate --accept-data-loss 2>&1 || {
         echo "[Entrypoint] WARNING: db push still failed, server may have issues"
 }
 
+echo "[Entrypoint] Ensuring initial database seed..."
+node dist/seed.js || true
+
 echo "[Entrypoint] Starting server..."
 exec "$@"

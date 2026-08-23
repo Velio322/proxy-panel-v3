@@ -232,18 +232,50 @@ cmd_reset_admin() {
     local MODE; MODE=$(get_panel_mode)
     if [[ "$MODE" == "docker" ]]; then
         cd "$PANEL_DIR"
-        echo -e "${CYAN}Applying new credentials via database seed...${NC}"
-        docker compose exec -T server npx tsx prisma/seed.ts \
+        echo -e "${CYAN}Applying new credentials to database...${NC}"
+        if ! docker compose exec -T server node dist/seed.js \
             --username "$USERNAME" \
             --password "$PASSWORD" \
-            --email "$EMAIL"
+            --email "$EMAIL"; then
+            docker compose exec -T server node -e "
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const prisma = new PrismaClient();
+async function run() {
+  const hash = await bcrypt.hash(process.argv[2], 12);
+  await prisma.user.upsert({
+    where: { username: process.argv[1] },
+    update: { password: hash, role: 'SUPER_ADMIN' },
+    create: { username: process.argv[1], password: hash, email: process.argv[3], role: 'SUPER_ADMIN', language: 'en' }
+  });
+  console.log('[Admin Reset] User updated:', process.argv[1]);
+}
+run().catch(console.error).finally(() => prisma.\$disconnect());
+" "$USERNAME" "$PASSWORD" "$EMAIL"
+        fi
         log "Admin credentials successfully updated in Docker database!"
     elif [[ -d "${PANEL_DIR}/server" ]]; then
         cd "${PANEL_DIR}/server"
-        npx tsx prisma/seed.ts \
+        if ! node dist/seed.js \
             --username "$USERNAME" \
             --password "$PASSWORD" \
-            --email "$EMAIL"
+            --email "$EMAIL"; then
+            node -e "
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const prisma = new PrismaClient();
+async function run() {
+  const hash = await bcrypt.hash(process.argv[2], 12);
+  await prisma.user.upsert({
+    where: { username: process.argv[1] },
+    update: { password: hash, role: 'SUPER_ADMIN' },
+    create: { username: process.argv[1], password: hash, email: process.argv[3], role: 'SUPER_ADMIN', language: 'en' }
+  });
+  console.log('[Admin Reset] User updated:', process.argv[1]);
+}
+run().catch(console.error).finally(() => prisma.\$disconnect());
+" "$USERNAME" "$PASSWORD" "$EMAIL"
+        fi
         log "Admin credentials successfully updated in local database!"
     else
         fail "Could not find ProxPanel installation at ${PANEL_DIR}"
