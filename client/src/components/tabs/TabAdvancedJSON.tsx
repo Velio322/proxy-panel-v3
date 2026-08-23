@@ -177,8 +177,6 @@ export function TabAdvancedJSON({ form, update }: AdvancedJSONTabProps) {
   );
 }
 
-// ──── Helpers ────
-
 function formToRawJson(form: Record<string, any>): any {
   const result: any = {
     protocol: form.protocol,

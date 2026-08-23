@@ -10,10 +10,6 @@ import { useI18n } from '@/i18n';
 
 const PROTOCOLS = ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS', 'HYSTERIA2', 'NAIVEPROXY', 'MIERU', 'TUIC'];
 
-// ══════════════════════════════════════════════
-// Main Component
-// ══════════════════════════════════════════════
-
 export function PlansPage() {
   const { t } = useI18n();
   const qc = useQueryClient();

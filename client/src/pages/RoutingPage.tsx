@@ -9,10 +9,6 @@ import {
   RefreshCw, Zap
 } from 'lucide-react';
 
-// ══════════════════════════════════════════════
-// Constants
-// ══════════════════════════════════════════════
-
 const OUTBOUND_TAGS = ['proxy', 'direct', 'block'] as const;
 
 const PRESETS = [
@@ -42,10 +38,6 @@ const PRESETS = [
   },
 ];
 
-// ══════════════════════════════════════════════
-// Helpers
-// ══════════════════════════════════════════════
-
 function outboundColor(tag: string): string {
   const map: Record<string, string> = {
     proxy: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
@@ -54,10 +46,6 @@ function outboundColor(tag: string): string {
   };
   return map[tag] || 'bg-fg-subtle/15 text-fg-muted border-fg-subtle/20';
 }
-
-// ══════════════════════════════════════════════
-// Shared Components
-// ══════════════════════════════════════════════
 
 const inputCls = "w-full px-2.5 py-1.5 rounded-lg bg-bg-raised border border-border text-fg text-xs focus:outline-none focus:border-[hsl(var(--accent))] focus:ring-1 focus:ring-[hsl(var(--accent/0.15))]";
 const labelCls = "block text-[11px] font-medium text-fg-subtle mb-1";

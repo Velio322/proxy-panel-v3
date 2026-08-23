@@ -15,11 +15,6 @@ const ROLES = [
   { value: 'RESELLER', labelKey: 'users.reseller', color: 'bg-blue-500/10 text-blue-400', descKey: 'users.resellerDesc' },
   { value: 'OPERATOR', labelKey: 'users.operator', color: 'bg-green-500/10 text-green-400', descKey: 'users.operatorDesc' },
 ];
-
-// ══════════════════════════════════════════════
-// Main Component
-// ══════════════════════════════════════════════
-
 export function UsersPage() {
   const { t } = useI18n();
   const qc = useQueryClient();

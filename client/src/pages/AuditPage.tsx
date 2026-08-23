@@ -47,12 +47,6 @@ const RESOURCE_CONFIG: Record<string, { icon: any; color: string }> = {
 };
 
 const ALL_ACTIONS = Object.keys(ACTION_CONFIG);
-const ALL_RESOURCES = Object.keys(RESOURCE_CONFIG);
-
-// ══════════════════════════════════════════════
-// Main Component
-// ══════════════════════════════════════════════
-
 export function AuditPage() {
   const { t } = useI18n();
   const [search, setSearch] = useState('');

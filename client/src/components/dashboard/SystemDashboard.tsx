@@ -13,10 +13,6 @@ import {
   CartesianGrid
 } from 'recharts';
 
-// ══════════════════════════════════════════════
-// System Alerts Feed
-// ══════════════════════════════════════════════
-
 interface SystemAlert {
   id: string;
   type: 'error' | 'warning' | 'info' | 'success';
@@ -92,10 +88,6 @@ function AlertsFeed({ alerts }: { alerts: SystemAlert[] }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Bandwidth Card
-// ══════════════════════════════════════════════
-
 function BandwidthCard({ overview }: { overview: any }) {
   const todayUp = Number(overview?.traffic?.today?.upload || 0);
   const todayDown = Number(overview?.traffic?.today?.download || 0);
@@ -129,10 +121,6 @@ function BandwidthCard({ overview }: { overview: any }) {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Top Loaded Nodes
-// ══════════════════════════════════════════════
 
 function TopNodesCard({ nodes }: { nodes: any[] }) {
   const sorted = [...nodes]
@@ -178,10 +166,6 @@ function TopNodesCard({ nodes }: { nodes: any[] }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Cluster Summary Strip
-// ══════════════════════════════════════════════
-
 function ClusterStrip({ overview, nodes }: { overview: any; nodes: any[] }) {
   const online = nodes?.filter(n => n.status === 'ONLINE').length || 0;
   const total = nodes?.length || 0;
@@ -208,10 +192,6 @@ function ClusterStrip({ overview, nodes }: { overview: any; nodes: any[] }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Custom Chart Tooltip
-// ══════════════════════════════════════════════
-
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
@@ -227,10 +207,6 @@ function ChartTooltip({ active, payload, label }: any) {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Main System Dashboard
-// ══════════════════════════════════════════════
 
 export function SystemDashboard() {
   const alerts = useSystemAlerts();

@@ -5,10 +5,6 @@
  * Converts Panel InboundConfig → OpenWrt uci commands / config files.
  */
 
-// ══════════════════════════════════════════════
-// Types
-// ══════════════════════════════════════════════
-
 interface InboundExport {
   protocol: string;
   tag: string;
@@ -41,10 +37,6 @@ interface PasswallNode {
   uuid?: string;
   [key: string]: any;
 }
-
-// ══════════════════════════════════════════════
-// UCI Command Generator
-// ══════════════════════════════════════════════
 
 export class OpenWrtConfigBuilder {
   private configDir: string;

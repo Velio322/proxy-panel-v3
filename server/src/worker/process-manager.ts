@@ -14,10 +14,6 @@ import { NaiveManager } from './core/naive';
 import { MieruManager } from './core/mieru';
 import { SNIRouter } from './port-sharing/sni-router';
 
-// ══════════════════════════════════════════════
-// Types
-// ══════════════════════════════════════════════
-
 interface ProcessState {
   name: string;
   process: ChildProcess | null;
@@ -47,10 +43,6 @@ interface BinaryInfo {
   githubRepo: string;
   assetPattern: string;
 }
-
-// ══════════════════════════════════════════════
-// Log Ring Buffer
-// ══════════════════════════════════════════════
 
 class RingBuffer<T> {
   private buffer: T[] = [];
@@ -83,10 +75,6 @@ class RingBuffer<T> {
     return this.buffer.length;
   }
 }
-
-// ══════════════════════════════════════════════
-// Binary Auto-Fetcher
-// ══════════════════════════════════════════════
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -235,10 +223,6 @@ async function ensureBinary(config: {
   }
 }
 
-// ══════════════════════════════════════════════
-// Error Parser
-// ══════════════════════════════════════════════
-
 function parseCoreError(stderrLines: string[]): CoreAlert['type'] {
   const text = stderrLines.join('\n').toLowerCase();
 
@@ -256,10 +240,6 @@ function parseCoreError(stderrLines: string[]): CoreAlert['type'] {
   }
   return 'unknown';
 }
-
-// ══════════════════════════════════════════════
-// Process Manager
-// ══════════════════════════════════════════════
 
 export class ProcessManager extends EventEmitter {
   private xray: XrayManager;
@@ -312,10 +292,6 @@ export class ProcessManager extends EventEmitter {
       this.logBuffers.set(name, new RingBuffer(500));
     }
   }
-
-  // ══════════════════════════════════════════════
-  // Binary Auto-Fetch
-  // ══════════════════════════════════════════════
 
   async fetchBinaries(): Promise<void> {
     console.log('[PM] Checking binaries...');
@@ -556,10 +532,6 @@ export class ProcessManager extends EventEmitter {
     this.restartTimers.set(name, timer);
   }
 
-  // ══════════════════════════════════════════════
-  // Control
-  // ══════════════════════════════════════════════
-
   restart(): boolean {
     console.log('[PM] Restarting all cores...');
     // Reset restart counters
@@ -586,10 +558,6 @@ export class ProcessManager extends EventEmitter {
       state.pid = null;
     }
   }
-
-  // ══════════════════════════════════════════════
-  // Status & Monitoring
-  // ══════════════════════════════════════════════
 
   getStatus(): NodeStatus {
     const uptime = Math.floor((Date.now() - this.startTime) / 1000);
@@ -644,10 +612,6 @@ export class ProcessManager extends EventEmitter {
   clearAlerts(): void {
     this.alerts.clear();
   }
-
-  // ══════════════════════════════════════════════
-  // Helpers
-  // ══════════════════════════════════════════════
 
   private getConnectionCount(): number {
     try {

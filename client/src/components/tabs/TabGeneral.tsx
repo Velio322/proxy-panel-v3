@@ -353,8 +353,6 @@ export function TabGeneral({ form, update, nodes }: GeneralTabProps) {
   );
 }
 
-// ──── Shared Components ────
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2.5">

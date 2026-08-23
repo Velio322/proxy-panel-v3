@@ -1,22 +1,13 @@
-import { ChildProcess, spawn, execSync } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { InboundConfig, CoreProcess } from '../types';
 
-// ══════════════════════════════════════════════
-// NaiveProxy Manager (Caddy-based)
-// ══════════════════════════════════════════════
-// NaiveProxy is a Caddy plugin (forward_proxy).
-// All reference panels (RIXXX, Veil, Iceslab) use Caddy
-// with forward_proxy directives. This manager generates
-// proper Caddyfiles, not standalone JSON configs.
-// ══════════════════════════════════════════════
-
 export class NaiveManager {
   private processes: Map<string, CoreProcess> = new Map();
   private configDir: string;
-  private binPath: string; // Path to Caddy binary with naive plugin
+  private binPath: string;
 
   constructor(configDir: string, binPath: string) {
     this.configDir = configDir;
@@ -45,18 +36,12 @@ export class NaiveManager {
     return count;
   }
 
-  // ══════════════════════════════════════════════
-  // Caddyfile Generation
-  // ══════════════════════════════════════════════
-
   generateCaddyfile(inbound: InboundConfig): string {
     const settings = inbound.settings;
     const domain = settings.domain || settings.sni || 'example.com';
     const email = settings.email || `admin@${domain}`;
     const port = inbound.port || 443;
-    const listen = inbound.listen || '0.0.0.0';
 
-    // Users: support both single-user and multi-user
     const users: Array<{ username: string; password: string }> = [];
     if (settings.users && Array.isArray(settings.users)) {
       for (const u of settings.users) {
@@ -71,30 +56,21 @@ export class NaiveManager {
         password: settings.password || crypto.randomBytes(16).toString('hex'),
       });
     } else {
-      // Default user
       users.push({
         username: 'user',
         password: settings.password || crypto.randomBytes(16).toString('hex'),
       });
     }
 
-    // Forward proxy directives (hardcoded best practices from RIXXX/Veil)
-    const hideIp = settings.hideIp !== false;      // default: true
-    const hideVia = settings.hideVia !== false;      // default: true
-    const probeResistance = settings.probeResistance !== false; // default: true
-
-    // Fallback/camouflage
+    const hideIp = settings.hideIp !== false;
+    const hideVia = settings.hideVia !== false;
+    const probeResistance = settings.probeResistance !== false;
     const fallbackRoot = settings.fallbackRoot || '/var/www/html';
-
-    // WARP upstream (Veil feature)
     const warpUpstream = settings.warpUpstream || '';
-
-    // TLS mode
-    const tlsMode = settings.tlsMode || 'letsencrypt'; // 'letsencrypt' | 'custom' | 'acme'
+    const tlsMode = settings.tlsMode || 'letsencrypt';
     const certFile = settings.certFile || '';
     const keyFile = settings.keyFile || '';
 
-    // Build Caddyfile
     let caddyfile = '';
     caddyfile += `{\n`;
     caddyfile += `  order forward_proxy before file_server\n`;
@@ -103,10 +79,8 @@ export class NaiveManager {
     caddyfile += `  }\n`;
     caddyfile += `}\n\n`;
 
-    // Listen block
     caddyfile += `:${port}, ${domain} {\n`;
 
-    // TLS configuration
     if (tlsMode === 'custom' && certFile && keyFile) {
       caddyfile += `  tls ${certFile} ${keyFile}\n`;
     } else {
@@ -114,11 +88,8 @@ export class NaiveManager {
     }
 
     caddyfile += `\n`;
-
-    // Forward proxy block
     caddyfile += `  forward_proxy {\n`;
 
-    // Users (multiple basic_auth lines)
     for (const user of users) {
       caddyfile += `    basic_auth ${user.username} ${user.password}\n`;
     }
@@ -127,25 +98,17 @@ export class NaiveManager {
     if (hideVia) caddyfile += `    hide_via\n`;
     if (probeResistance) caddyfile += `    probe_resistance\n`;
 
-    // WARP upstream (Veil feature — route through Cloudflare WARP)
     if (warpUpstream) {
       caddyfile += `    upstream ${warpUpstream}\n`;
     }
 
     caddyfile += `  }\n\n`;
-
-    // Fallback / camouflage file server
     caddyfile += `  root * ${fallbackRoot}\n`;
     caddyfile += `  file_server\n`;
-
     caddyfile += `}\n`;
 
     return caddyfile;
   }
-
-  // ══════════════════════════════════════════════
-  // Config Write
-  // ══════════════════════════════════════════════
 
   writeCaddyfile(inboundId: string, caddyfile: string): string {
     const configPath = path.join(this.configDir, `naive-${inboundId}.Caddyfile`);
@@ -153,10 +116,6 @@ export class NaiveManager {
     fs.writeFileSync(configPath, caddyfile, 'utf-8');
     return configPath;
   }
-
-  // ══════════════════════════════════════════════
-  // Validation (Veil feature — validate before apply)
-  // ══════════════════════════════════════════════
 
   validate(configPath: string): { valid: boolean; error?: string } {
     try {
@@ -171,10 +130,6 @@ export class NaiveManager {
     }
   }
 
-  // ══════════════════════════════════════════════
-  // Process Lifecycle
-  // ══════════════════════════════════════════════
-
   start(inbound: InboundConfig): boolean {
     const key = inbound.id;
     this.stopOne(key);
@@ -184,25 +139,19 @@ export class NaiveManager {
       return false;
     }
 
-    // Generate Caddyfile
     const caddyfile = this.generateCaddyfile(inbound);
     const configPath = this.writeCaddyfile(inbound.id, caddyfile);
 
-    console.log(`[Naive:${inbound.tag}] Generated Caddyfile at ${configPath}`);
-
-    // Validate before start
     const validation = this.validate(configPath);
     if (!validation.valid) {
       console.error(`[Naive:${inbound.tag}] Caddyfile validation failed: ${validation.error}`);
       return false;
     }
 
-    // Ensure fallback directory exists
     const settings = inbound.settings;
     const fallbackRoot = settings.fallbackRoot || '/var/www/html';
     try { fs.mkdirSync(fallbackRoot, { recursive: true }); } catch {}
 
-    // Create a minimal index.html if it doesn't exist
     const indexFile = path.join(fallbackRoot, 'index.html');
     if (!fs.existsSync(indexFile)) {
       fs.writeFileSync(indexFile, '<!DOCTYPE html><html><head><title>Welcome</title></head><body><h1>Welcome</h1></body></html>');
@@ -247,7 +196,6 @@ export class NaiveManager {
         coreProcess.pid = null;
       });
 
-      console.log(`[Naive:${inbound.tag}] Started (PID: ${proc.pid})`);
       return true;
     } catch (error: any) {
       console.error(`[Naive:${inbound.tag}] Failed: ${error.message}`);
@@ -262,7 +210,6 @@ export class NaiveManager {
       proc.process = null;
       proc.pid = null;
       proc.running = false;
-      console.log(`[Naive:${proc.name}] Stopped`);
     }
   }
 
@@ -277,10 +224,6 @@ export class NaiveManager {
     this.stopOne(inbound.id);
     return this.start(inbound);
   }
-
-  // ══════════════════════════════════════════════
-  // Subscription Link Generation
-  // ══════════════════════════════════════════════
 
   generateSubLink(inbound: InboundConfig, user: { username: string; password: string }): string {
     const settings = inbound.settings;

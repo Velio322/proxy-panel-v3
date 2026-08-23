@@ -14,14 +14,6 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 
-// ══════════════════════════════════════════════
-// Types
-// ══════════════════════════════════════════════
-
-// ══════════════════════════════════════════════
-// Main Page
-// ══════════════════════════════════════════════
-
 export function MonitoringPage() {
   const { t } = useI18n();
   const [period, setPeriod] = useState('7d');

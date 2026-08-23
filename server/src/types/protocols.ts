@@ -1,14 +1,5 @@
 import { z } from 'zod';
 
-// ══════════════════════════════════════════════════════════════
-// PROXPANEL DATA MATRIX v2.0
-// 100% coverage: Xray-core v1.8+, Hysteria2, NaiveProxy, Mieru
-// ══════════════════════════════════════════════════════════════
-
-// ──────────────────────────────────────────────
-// 1. SNIFFING CONFIGURATION
-// ──────────────────────────────────────────────
-
 export interface SniffingConfig {
   enabled: boolean;
   destOverride: ('http' | 'tls' | 'quic' | 'stun' | 'dns' | 'bittorrent')[];
@@ -24,10 +15,6 @@ export const sniffingSchema = z.object({
   routeOnly: z.boolean().default(false),
   domainsExcluded: z.array(z.string()).default([]),
 });
-
-// ──────────────────────────────────────────────
-// 2. TRANSPORT CONFIGURATIONS
-// ──────────────────────────────────────────────
 
 export interface TcpSettings {
   acceptProxyProtocol: boolean;
@@ -103,10 +90,6 @@ export interface XhttpSettings {
   };
 }
 
-// ──────────────────────────────────────────────
-// 3. REALITY SETTINGS
-// ──────────────────────────────────────────────
-
 export interface RealitySettings {
   serverName: string;
   fingerprint: string;
@@ -120,10 +103,6 @@ export interface RealitySettings {
     seed: string;
   };
 }
-
-// ──────────────────────────────────────────────
-// 4. TLS SETTINGS
-// ──────────────────────────────────────────────
 
 export interface TlsSettings {
   serverName: string;
@@ -150,10 +129,6 @@ export interface TlsCertificate {
   keyFileBase64?: string;
 }
 
-// ──────────────────────────────────────────────
-// 5. VLESS INBOUND
-// ──────────────────────────────────────────────
-
 export interface VlessInboundSettings {
   users: VlessUser[];
   decryption: 'none';
@@ -177,10 +152,6 @@ export interface VlessFallback {
   xver: number;
 }
 
-// ──────────────────────────────────────────────
-// 6. VMESS INBOUND
-// ──────────────────────────────────────────────
-
 export interface VmessInboundSettings {
   users: VmessUser[];
   disableInsecure: boolean;
@@ -194,10 +165,6 @@ export interface VmessUser {
   email: string;
   level: number;
 }
-
-// ──────────────────────────────────────────────
-// 7. TROJAN INBOUND
-// ──────────────────────────────────────────────
 
 export interface TrojanInboundSettings {
   password: string;
@@ -214,10 +181,6 @@ export interface TrojanFallback {
   xver: number;
 }
 
-// ──────────────────────────────────────────────
-// 8. SHADOWSOCKS INBOUND
-// ──────────────────────────────────────────────
-
 export interface ShadowsocksInboundSettings {
   method: string;
   password: string;
@@ -225,10 +188,6 @@ export interface ShadowsocksInboundSettings {
   ota: boolean;
   level: number;
 }
-
-// ──────────────────────────────────────────────
-// 9. HYSTERIA2 INBOUND
-// ──────────────────────────────────────────────
 
 export interface Hysteria2InboundSettings {
   users: Hysteria2User[];
@@ -275,10 +234,6 @@ export interface Hysteria2Obfs {
   password: string;
 }
 
-// ──────────────────────────────────────────────
-// 10. NAIVEPROXY CONFIGURATION
-// ──────────────────────────────────────────────
-
 export interface NaiveProxySettings {
   proxy: string;
   'cert-dir': string;
@@ -322,10 +277,6 @@ export interface NaiveProxySettings {
   };
 }
 
-// ──────────────────────────────────────────────
-// 11. MIERU CONFIGURATION
-// ──────────────────────────────────────────────
-
 export interface MieruSettings {
   port: number;
   portRange: number[];
@@ -367,10 +318,6 @@ export interface MieruUser {
   name: string;
   password: string;
 }
-
-// ──────────────────────────────────────────────
-// 12. ROUTING
-// ──────────────────────────────────────────────
 
 export interface RoutingRule {
   id?: string;
@@ -420,10 +367,6 @@ export interface RoutingConfig {
   rules: (RoutingRule | RoutingRuleLogical)[];
   balancers: Balancer[];
 }
-
-// ──────────────────────────────────────────────
-// 13. NODE SETTINGS
-// ──────────────────────────────────────────────
 
 export interface NodeSettings {
   log: {
@@ -534,10 +477,6 @@ export interface TransportConfig {
   grpcSettings: GrpcSettings;
 }
 
-// ──────────────────────────────────────────────
-// 14. FULL INBOUND CONFIG (Unified)
-// ──────────────────────────────────────────────
-
 export interface InboundConfig {
   id: string;
   protocol: Protocol;
@@ -579,10 +518,6 @@ export interface StreamConfig {
   };
 }
 
-// ──────────────────────────────────────────────
-// 15. PORT SHARING
-// ──────────────────────────────────────────────
-
 export interface PortShareConfig {
   id: string;
   protocol: Protocol;
@@ -593,10 +528,6 @@ export interface PortShareConfig {
   stream: Record<string, any>;
   enable: boolean;
 }
-
-// ──────────────────────────────────────────────
-// 16. OUTBOUND CONFIG
-// ──────────────────────────────────────────────
 
 export interface OutboundConfig {
   protocol: string;
@@ -614,10 +545,6 @@ export interface OutboundConfig {
     transportLayer: boolean;
   };
 }
-
-// ──────────────────────────────────────────────
-// 17. FULL XRAY CONFIG
-// ──────────────────────────────────────────────
 
 export interface XrayConfig {
   log: {
@@ -637,10 +564,6 @@ export interface XrayConfig {
   outbounds: OutboundConfig[];
 }
 
-// ──────────────────────────────────────────────
-// 18. SING-BOX CONFIG
-// ──────────────────────────────────────────────
-
 export interface SingboxConfig {
   log: { level: string; timestamp: boolean };
   dns: any;
@@ -649,10 +572,6 @@ export interface SingboxConfig {
   route: any;
   experimental?: any;
 }
-
-// ──────────────────────────────────────────────
-// 19. FULL NODE STATUS
-// ──────────────────────────────────────────────
 
 export interface NodeStatus {
   status: 'ONLINE' | 'OFFLINE' | 'ERROR' | 'MAINTENANCE';
@@ -681,10 +600,6 @@ export interface PortInfo {
   connections: number;
 }
 
-// ──────────────────────────────────────────────
-// 20. SUBSCRIPTION OUTPUT FORMATS
-// ──────────────────────────────────────────────
-
 export interface SubscriptionEntry {
   protocol: string;
   tag: string;
@@ -708,10 +623,6 @@ export interface SingboxOutbound {
   server_port: number;
   [key: string]: any;
 }
-
-// ──────────────────────────────────────────────
-// 21. BILLING TYPES
-// ──────────────────────────────────────────────
 
 export type PaymentMethod = 'crypto_pay' | 'stripe' | 'telegram_stars' | 'manual';
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'CANCELLED';

@@ -11,16 +11,8 @@ import {
   ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 
-// ══════════════════════════════════════════════
-// Types
-// ══════════════════════════════════════════════
-
 interface PingPoint { time: string; ms: number }
 interface LogEntry { time: string; stream: 'stdout' | 'stderr'; line: string }
-
-// ══════════════════════════════════════════════
-// Ping Simulator (replace with real WebSocket)
-// ══════════════════════════════════════════════
 
 function usePingHistory(nodeId: string): PingPoint[] {
   const [points, setPoints] = useState<PingPoint[]>([]);
@@ -40,10 +32,6 @@ function usePingHistory(nodeId: string): PingPoint[] {
 
   return points;
 }
-
-// ══════════════════════════════════════════════
-// Node Monitoring Card
-// ══════════════════════════════════════════════
 
 function NodeMonitorCard({ node, onOpenLogs }: { node: Node; onOpenLogs: () => void }) {
   const pingHistory = usePingHistory(node.id);
@@ -190,10 +178,6 @@ function MetricMini({ label, value, suffix, warn }: { label: string; value?: num
   );
 }
 
-// ══════════════════════════════════════════════
-// Logs Modal
-// ══════════════════════════════════════════════
-
 function LogsModal({ node, onClose }: { node: Node; onClose: () => void }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -284,10 +268,6 @@ function LogsModal({ node, onClose }: { node: Node; onClose: () => void }) {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Main Board Component
-// ══════════════════════════════════════════════
 
 export function NodeMonitoringBoard() {
   const [logsNode, setLogsNode] = useState<Node | null>(null);

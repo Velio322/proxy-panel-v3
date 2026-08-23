@@ -73,10 +73,6 @@ export function TabTransport({ form, update }: TransportTabProps) {
       {form.transport === 'kcp' && <KcpSettings form={form} update={update} />}
     </div>
   );
-}
-
-// ──── TCP ────
-
 function TcpSettings({ form, update }: TransportTabProps) {
   return (
     <Section title="TCP Settings">
@@ -117,8 +113,6 @@ function TcpSettings({ form, update }: TransportTabProps) {
     </Section>
   );
 }
-
-// ──── WebSocket ────
 
 function WsSettings({ form, update }: TransportTabProps) {
   return (
@@ -162,8 +156,6 @@ function WsSettings({ form, update }: TransportTabProps) {
   );
 }
 
-// ──── gRPC ────
-
 function GrpcSettings({ form, update }: TransportTabProps) {
   return (
     <Section title="gRPC Settings">
@@ -191,8 +183,6 @@ function GrpcSettings({ form, update }: TransportTabProps) {
   );
 }
 
-// ──── HTTP/2 ────
-
 function H2Settings({ form, update }: TransportTabProps) {
   return (
     <Section title="HTTP/2 Settings">
@@ -217,8 +207,6 @@ function H2Settings({ form, update }: TransportTabProps) {
   );
 }
 
-// ──── HTTPUpgrade ────
-
 function HttpUpgradeSettings({ form, update }: TransportTabProps) {
   return (
     <Section title="HTTPUpgrade Settings">
@@ -235,8 +223,6 @@ function HttpUpgradeSettings({ form, update }: TransportTabProps) {
     </Section>
   );
 }
-
-// ──── XHTTP ────
 
 function XhttpSettings({ form, update }: TransportTabProps) {
   return (
@@ -264,8 +250,6 @@ function XhttpSettings({ form, update }: TransportTabProps) {
     </Section>
   );
 }
-
-// ──── mKCP ────
 
 function KcpSettings({ form, update }: TransportTabProps) {
   return (
@@ -298,8 +282,6 @@ function KcpSettings({ form, update }: TransportTabProps) {
     </Section>
   );
 }
-
-// ──── Shared Components ────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

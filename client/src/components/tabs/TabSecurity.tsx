@@ -340,8 +340,6 @@ export function TabSecurity({ form, update }: SecurityTabProps) {
   );
 }
 
-// ──── Shared Components ────
-
 function Section({ title, accent, children }: { title: string; accent?: boolean; children: React.ReactNode }) {
   return (
     <div className="space-y-2.5">

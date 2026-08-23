@@ -4,10 +4,6 @@ import { cn } from '@/lib/utils';
 const inputCls = "w-full px-2.5 py-1.5 rounded-lg bg-bg-raised border border-border text-fg text-xs focus:outline-none focus:border-[hsl(var(--accent))] focus:ring-1 focus:ring-[hsl(var(--accent/0.15))]";
 const labelCls = "block text-[11px] font-medium text-fg-subtle mb-1";
 
-// ══════════════════════════════════════════════
-// Types
-// ══════════════════════════════════════════════
-
 export interface RoutingRuleForm {
   id: string;
   type: 'field' | 'logical';
@@ -34,10 +30,6 @@ interface RoutingRulesTabProps {
   outbounds: string[];
   inboundTags: string[];
 }
-
-// ══════════════════════════════════════════════
-// Presets
-// ══════════════════════════════════════════════
 
 const PRESETS: { label: string; icon: string; rule: Partial<RoutingRuleForm> }[] = [
   {
@@ -123,10 +115,6 @@ const GEOSITE_OPTIONS = [
   'geosite:facebook', 'geosite:twitter', 'geosite:geolocation-!cn',
   'geosite:private', 'geosite:localhost',
 ];
-
-// ══════════════════════════════════════════════
-// Main Component
-// ══════════════════════════════════════════════
 
 export function RoutingRulesTab({ rules, onChange, outbounds, inboundTags }: RoutingRulesTabProps) {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -326,10 +314,6 @@ export function RoutingRulesTab({ rules, onChange, outbounds, inboundTags }: Rou
   );
 }
 
-// ══════════════════════════════════════════════
-// Rule Edit Panel
-// ══════════════════════════════════════════════
-
 function RuleEditPanel({ rule, outbounds, inboundTags, onChange, onClose }: {
   rule: RoutingRuleForm;
   outbounds: string[];
@@ -429,10 +413,6 @@ function RuleEditPanel({ rule, outbounds, inboundTags, onChange, onClose }: {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Tag Array Field
-// ══════════════════════════════════════════════
 
 function TagArrayField({ label, value, onChange, placeholder, suggestions }: {
   label: string; value: string[]; onChange: (v: string[]) => void;

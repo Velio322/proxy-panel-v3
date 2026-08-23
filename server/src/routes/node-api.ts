@@ -4,16 +4,10 @@ import { config } from '../config';
 
 const router = Router();
 
-// ══════════════════════════════════════════════
-// POST /api/v1/nodes/self/register
-// Remote worker handshake: register node with master
-// ══════════════════════════════════════════════
-
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { token, name, host, port, apiPort, system } = req.body;
 
-    // Validate token
     if (!token || token !== config.worker.nodeSecret) {
       return res.status(401).json({ error: 'Invalid auth token' });
     }
@@ -22,7 +16,6 @@ router.post('/register', async (req: Request, res: Response) => {
     const effectiveHost = (host && host !== '0.0.0.0' && host !== '::') ? host : (req.ip || '127.0.0.1');
     const effectiveName = name || `node-${Date.now()}`;
 
-    // Check if node already registered by secret token or specific name
     const existing = await prisma.node.findFirst({
       where: {
         OR: [
@@ -33,7 +26,6 @@ router.post('/register', async (req: Request, res: Response) => {
     });
 
     if (existing) {
-      // Update existing node
       const updated = await prisma.node.update({
         where: { id: existing.id },
         data: {
@@ -47,7 +39,6 @@ router.post('/register', async (req: Request, res: Response) => {
         },
       });
 
-      console.log(`[Handshake] Node "${updated.name}" re-registered (${updated.id})`);
       return res.json({
         nodeId: updated.id,
         status: 're-registered',
@@ -55,7 +46,6 @@ router.post('/register', async (req: Request, res: Response) => {
       });
     }
 
-    // Create new node
     const node = await prisma.node.create({
       data: {
         name: effectiveName,
@@ -73,9 +63,6 @@ router.post('/register', async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`[Handshake] New node registered: "${node.name}" (${node.id}) from ${host || req.ip}`);
-
-    // Log audit event
     await prisma.auditLog.create({
       data: {
         action: 'CREATE',
@@ -97,15 +84,9 @@ router.post('/register', async (req: Request, res: Response) => {
       message: 'Node registered successfully',
     });
   } catch (error: any) {
-    console.error('[Handshake] Error:', error.message);
     res.status(500).json({ error: 'Registration failed', details: error.message });
   }
 });
-
-// ══════════════════════════════════════════════
-// POST /api/v1/nodes/self/heartbeat
-// Worker sends periodic health/status updates
-// ══════════════════════════════════════════════
 
 router.post('/heartbeat', async (req: Request, res: Response) => {
   try {
@@ -117,14 +98,11 @@ router.post('/heartbeat', async (req: Request, res: Response) => {
     }
 
     const { nodeId, status, cpuUsage, memUsage, uptime, connections } = req.body;
-
     if (!nodeId) {
       return res.status(400).json({ error: 'nodeId required' });
     }
 
     const prisma = getPrisma();
-
-    // Update node status
     const node = await prisma.node.findUnique({ where: { id: nodeId } });
     if (!node) {
       return res.status(404).json({ error: 'Node not found' });
@@ -137,11 +115,10 @@ router.post('/heartbeat', async (req: Request, res: Response) => {
         cpuUsage: cpuUsage ?? null,
         memUsage: memUsage ?? null,
         lastCheckAt: new Date(),
-        lastPingMs: null, // Could calculate RTT
+        lastPingMs: null,
       },
     });
 
-    // Store metric
     await prisma.nodeMetric.create({
       data: {
         nodeId,
@@ -152,19 +129,13 @@ router.post('/heartbeat', async (req: Request, res: Response) => {
         connections: connections || 0,
         uptime: uptime || 0,
       },
-    }).catch(() => {}); // Non-critical
+    }).catch(() => {});
 
     res.json({ status: 'ok' });
   } catch (error: any) {
-    console.error('[Heartbeat] Error:', error.message);
     res.status(500).json({ error: 'Heartbeat failed' });
   }
 });
-
-// ══════════════════════════════════════════════
-// POST /api/v1/nodes/self/alert
-// Worker reports critical alerts
-// ══════════════════════════════════════════════
 
 router.post('/alert', async (req: Request, res: Response) => {
   try {
@@ -175,10 +146,8 @@ router.post('/alert', async (req: Request, res: Response) => {
     }
 
     const { nodeId, core, type, message, stderr } = req.body;
-
     const prisma = getPrisma();
 
-    // Store as audit log
     await prisma.auditLog.create({
       data: {
         action: 'ALERT',
@@ -195,7 +164,6 @@ router.post('/alert', async (req: Request, res: Response) => {
       },
     });
 
-    // Update node status if crash
     if (nodeId && (type === 'crash' || type === 'start_failed')) {
       await prisma.node.update({
         where: { id: nodeId },
@@ -203,19 +171,11 @@ router.post('/alert', async (req: Request, res: Response) => {
       }).catch(() => {});
     }
 
-    console.warn(`[Alert] Node ${nodeId}: [${core}] ${type} - ${message}`);
-
     res.json({ status: 'acknowledged' });
   } catch (error: any) {
-    console.error('[Alert] Error:', error.message);
     res.status(500).json({ error: 'Alert failed' });
   }
 });
-
-// ══════════════════════════════════════════════
-// GET /api/v1/nodes/self/config
-// Worker fetches its configuration
-// ══════════════════════════════════════════════
 
 router.get('/config', async (req: Request, res: Response) => {
   try {
@@ -231,7 +191,6 @@ router.get('/config', async (req: Request, res: Response) => {
     }
 
     const prisma = getPrisma();
-
     const inbounds = await prisma.inbound.findMany({
       where: { nodeId, enable: true },
       include: { portShares: true },
@@ -259,15 +218,9 @@ router.get('/config', async (req: Request, res: Response) => {
       timestamp: Date.now(),
     }));
   } catch (error: any) {
-    console.error('[Config] Error:', error.message);
     res.status(500).json({ error: 'Config fetch failed' });
   }
 });
-
-// ══════════════════════════════════════════════
-// POST /api/v1/nodes/self/traffic
-// Worker reports traffic usage (Fallback for WS)
-// ══════════════════════════════════════════════
 
 router.post('/traffic', async (req: Request, res: Response) => {
   try {
@@ -285,7 +238,6 @@ router.post('/traffic', async (req: Request, res: Response) => {
     const { getTrafficBatcher } = await import('../lib/traffic-batcher');
     const batcher = getTrafficBatcher();
 
-    // stats: Record<email, { upload, download }>
     for (const [email, stat] of Object.entries(stats as any)) {
       await batcher.add({
         nodeId,
@@ -297,7 +249,6 @@ router.post('/traffic', async (req: Request, res: Response) => {
 
     res.json({ status: 'ok', processed: Object.keys(stats).length });
   } catch (error: any) {
-    console.error('[Traffic] Error:', error.message);
     res.status(500).json({ error: 'Traffic report failed' });
   }
 });

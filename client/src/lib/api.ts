@@ -28,8 +28,6 @@ api.interceptors.response.use(
   }
 );
 
-// ──── Types ────
-
 export interface User {
   id: string;
   username: string;
@@ -182,8 +180,6 @@ export interface RoutingRule {
   createdAt: string;
   updatedAt: string;
 }
-
-// ──── API Methods ────
 
 export const authApi = {
   login: (username: string, password: string) =>

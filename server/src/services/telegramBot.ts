@@ -3,10 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import { config } from '../config';
 import { getPrisma } from '../lib/prisma';
 
-// ══════════════════════════════════════════════
-// TelegramBotService
-// ══════════════════════════════════════════════
-
 export class TelegramBotService {
   private bot: Telegraf | null = null;
   private prisma: PrismaClient;

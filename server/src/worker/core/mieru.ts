@@ -1,16 +1,8 @@
-import { ChildProcess, spawn, execSync } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { InboundConfig, CoreProcess } from '../types';
-
-// ══════════════════════════════════════════════
-// Mieru Manager
-// ══════════════════════════════════════════════
-// Based on Veil and Iceslab reference implementations.
-// Mieru uses JSON config with portBindings for dual
-// TCP/UDP transport on the same port.
-// ══════════════════════════════════════════════
 
 export class MieruManager {
   private processes: Map<string, CoreProcess> = new Map();
@@ -36,15 +28,9 @@ export class MieruManager {
     return null;
   }
 
-  // ══════════════════════════════════════════════
-  // Config Generation (Veil/Iceslab parity)
-  // ══════════════════════════════════════════════
-
   generateConfig(inbound: InboundConfig): any {
     const settings = inbound.settings;
     const port = inbound.port || 443;
-
-    // Transport: TCP, UDP, or both (Veil feature — dual binding)
     const transport = (settings.transport || 'tcp').toLowerCase();
     const portBindings: Array<{ port: number; protocol: string }> = [];
 
@@ -54,13 +40,10 @@ export class MieruManager {
     if (transport === 'both' || transport === 'udp' || transport === 'tcp,udp') {
       portBindings.push({ port, protocol: 'UDP' });
     }
-
-    // If no binding specified, default to TCP
     if (portBindings.length === 0) {
       portBindings.push({ port, protocol: 'TCP' });
     }
 
-    // Users: support multi-user (Veil/Iceslab feature)
     const users: Array<{ name: string; password: string }> = [];
     if (settings.users && Array.isArray(settings.users)) {
       for (const u of settings.users) {
@@ -81,7 +64,6 @@ export class MieruManager {
       });
     }
 
-    // Logging level
     const loggingLevel = settings.loggingLevel || 'INFO';
 
     return {
@@ -90,10 +72,6 @@ export class MieruManager {
       loggingLevel,
     };
   }
-
-  // ══════════════════════════════════════════════
-  // Client Config Generation (Veil parity)
-  // ══════════════════════════════════════════════
 
   generateClientConfig(inbound: InboundConfig, user: { name: string; password: string }): any {
     const settings = inbound.settings;
@@ -124,20 +102,12 @@ export class MieruManager {
     };
   }
 
-  // ══════════════════════════════════════════════
-  // Config Write
-  // ══════════════════════════════════════════════
-
   writeConfig(inboundId: string, config: any): string {
     const configPath = path.join(this.configDir, `mieru-${inboundId}.json`);
     fs.mkdirSync(this.configDir, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
     return configPath;
   }
-
-  // ══════════════════════════════════════════════
-  // Validation (Veil feature — mieru check before apply)
-  // ══════════════════════════════════════════════
 
   validate(configPath: string): { valid: boolean; error?: string } {
     try {
@@ -152,10 +122,6 @@ export class MieruManager {
     }
   }
 
-  // ══════════════════════════════════════════════
-  // Process Lifecycle
-  // ══════════════════════════════════════════════
-
   start(inbound: InboundConfig): boolean {
     const key = inbound.id;
     this.stopOne(key);
@@ -168,9 +134,6 @@ export class MieruManager {
     const config = this.generateConfig(inbound);
     const configPath = this.writeConfig(inbound.id, config);
 
-    console.log(`[Mieru:${inbound.tag}] Config: ${config.portBindings.length} bindings, ${config.users.length} users`);
-
-    // Validate before start
     const validation = this.validate(configPath);
     if (!validation.valid) {
       console.error(`[Mieru:${inbound.tag}] Config validation failed: ${validation.error}`);
@@ -216,7 +179,6 @@ export class MieruManager {
         coreProcess.pid = null;
       });
 
-      console.log(`[Mieru:${inbound.tag}] Started (PID: ${proc.pid})`);
       return true;
     } catch (error: any) {
       console.error(`[Mieru:${inbound.tag}] Failed: ${error.message}`);
@@ -231,7 +193,6 @@ export class MieruManager {
       proc.process = null;
       proc.pid = null;
       proc.running = false;
-      console.log(`[Mieru:${proc.name}] Stopped`);
     }
   }
 
@@ -246,10 +207,6 @@ export class MieruManager {
     this.stopOne(inbound.id);
     return this.start(inbound);
   }
-
-  // ══════════════════════════════════════════════
-  // Subscription Link Generation
-  // ══════════════════════════════════════════════
 
   generateSubLink(inbound: InboundConfig, user: { name: string; password: string }): string {
     const settings = inbound.settings;

@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events';
+import os from 'os';
+import { execSync } from 'child_process';
 import { XrayManager } from './core/xray';
 import { SingboxManager } from './core/singbox';
 import { NaiveManager } from './core/naive';
@@ -22,10 +24,6 @@ interface NodeControllerConfig {
   gracePeriodMs: number;
 }
 
-/**
- * NodeController — production-ready daemon managing all proxy cores.
- * Handles: config hydration, graceful restart, SNI port-sharing, auth.
- */
 export class NodeController extends EventEmitter {
   private xray: XrayManager;
   private singbox: SingboxManager;
@@ -52,10 +50,6 @@ export class NodeController extends EventEmitter {
     this.auth = new AuthManager(config.nodeSecret);
   }
 
-  /**
-   * Apply configuration from Master with full hydration pipeline.
-   * Pipeline: Remap ports → Generate core configs → Write HAProxy → Graceful restart.
-   */
   async applyConfig(inbounds: InboundConfig[], routing?: RoutingRule[]): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       this.queuePromise = this.queuePromise
@@ -76,17 +70,10 @@ export class NodeController extends EventEmitter {
     this.currentInbounds = inbounds;
     if (routing) this.currentRouting = routing;
 
-    console.log(`[Controller] Applying ${inbounds.length} inbounds with ${this.currentRouting.length} routing rules`);
-
     try {
-      // Step 1: Analyze port-sharing needs
       const portGroups = this.portSharing.analyze(inbounds);
-      console.log(`[Controller] Port-sharing: ${portGroups.size} shared port groups`);
-
-      // Step 2: Remap ports for port-shared inbounds
       const remapped = this.portSharing.remapPorts(inbounds);
 
-      // Step 3: Separate by core type
       const xrayInbounds = remapped.filter((i) =>
         ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(i.protocol) && i.enable
       );
@@ -100,51 +87,36 @@ export class NodeController extends EventEmitter {
         i.protocol === 'MIERU' && i.enable
       );
 
-      // Step 4: Generate Xray config with full hydration
       if (xrayInbounds.length > 0) {
         const xrayConfig = this.hydrator.generateXrayConfig(xrayInbounds, this.currentRouting);
         this.xray.writeConfig(xrayConfig);
-        console.log(`[Controller] Xray config hydrated: ${xrayInbounds.length} inbounds`);
       }
 
-      // Step 5: Generate sing-box config
       if (singboxInbounds.length > 0) {
         const singboxConfig = this.hydrator.generateSingboxConfig(singboxInbounds);
         this.singbox.writeConfig(singboxConfig);
-        console.log(`[Controller] sing-box config hydrated: ${singboxInbounds.length} inbounds`);
       }
 
-      // Step 6: Generate HAProxy config for port-sharing
       if (portGroups.size > 0) {
         const haproxyConfig = this.portSharing.generateHAProxyConfig(portGroups);
         this.portSharing.writeHAProxyConfig(haproxyConfig);
-        console.log(`[Controller] HAProxy config generated for ${portGroups.size} groups`);
       }
 
-      // Step 7: Graceful restart — send SIGUSR1 to Xray (no connection drop)
       await this.gracefulRestart(xrayInbounds, singboxInbounds, naiveInbounds, mieruInbounds);
-
       this.emit('configApplied', { xray: xrayInbounds.length, singbox: singboxInbounds.length });
-      console.log('[Controller] Config applied successfully');
     } catch (error: any) {
       console.error(`[Controller] Config hydration failed: ${error.message}`);
-      // Rollback to previous config if available
       if (prevInbounds.length > 0) {
-        console.log('[Controller] Rolling back to previous config');
         try {
           await this._applyToCores(prevInbounds);
         } catch {
-          console.error('[Controller] Rollback also failed');
+          console.error('[Controller] Rollback failed');
         }
       }
       throw error;
     }
   }
 
-  /**
-   * Graceful restart: reload configs without dropping active connections.
-   * Uses Xray's SIGHUP for reload, and process replacement for others.
-   */
   private async gracefulRestart(
     xrayInbounds: InboundConfig[],
     singboxInbounds: InboundConfig[],
@@ -153,15 +125,10 @@ export class NodeController extends EventEmitter {
   ): Promise<void> {
     const graceMs = this.config.gracePeriodMs;
 
-    // Phase 1: Try graceful reload for Xray (SIGHUP — zero downtime)
     if (xrayInbounds.length > 0) {
       if (this.xray.isRunning()) {
-        console.log(`[Graceful] Xray: sending SIGHUP (reload)`);
         const reloaded = this.xray.reload();
-        if (reloaded) {
-          console.log(`[Graceful] Xray reloaded successfully`);
-        } else {
-          console.log(`[Graceful] Xray SIGHUP failed, doing full restart`);
+        if (!reloaded) {
           this.xray.stop();
           await sleep(500);
           this.xray.start();
@@ -170,17 +137,13 @@ export class NodeController extends EventEmitter {
         this.xray.start();
       }
     } else if (this.xray.isRunning()) {
-      // No xray inbounds — stop xray
       this.xray.stop();
     }
 
-    // Phase 2: For sing-box, naive, mieru — replace process
-    // Wait for grace period to let existing connections drain
     if (this.singbox.isRunning() && singboxInbounds.length === 0) {
       this.singbox.stop();
     } else if (singboxInbounds.length > 0) {
       if (this.singbox.isRunning()) {
-        console.log(`[Graceful] sing-box: stopping old process, waiting ${graceMs}ms`);
         this.singbox.stop();
         await sleep(graceMs);
       }
@@ -207,7 +170,6 @@ export class NodeController extends EventEmitter {
       this.mieru.stopAll();
     }
 
-    // Phase 3: Restart HAProxy for port-sharing
     if (this.config.haproxyEnabled) {
       this.portSharing.reloadHAProxy();
     }
@@ -220,15 +182,15 @@ export class NodeController extends EventEmitter {
     const mieruInbounds = inbounds.filter((i) => i.protocol === 'MIERU' && i.enable);
 
     if (xrayInbounds.length > 0) {
-      const config = this.hydrator.generateXrayConfig(xrayInbounds, this.currentRouting);
-      this.xray.writeConfig(config);
+      const cfg = this.hydrator.generateXrayConfig(xrayInbounds, this.currentRouting);
+      this.xray.writeConfig(cfg);
       this.xray.stop();
       this.xray.start();
     }
 
     if (singboxInbounds.length > 0) {
-      const config = this.hydrator.generateSingboxConfig(singboxInbounds);
-      this.singbox.writeConfig(config);
+      const cfg = this.hydrator.generateSingboxConfig(singboxInbounds);
+      this.singbox.writeConfig(cfg);
       this.singbox.stop();
       this.singbox.start();
     }
@@ -245,7 +207,6 @@ export class NodeController extends EventEmitter {
     if (this.config.haproxyEnabled) {
       this.portSharing.stopHAProxy();
     }
-    console.log('[Controller] All cores stopped');
   }
 
   getStatus(): NodeStatus {
@@ -265,7 +226,7 @@ export class NodeController extends EventEmitter {
       naivePid: this.naive.getPid(),
       mieruPid: this.mieru.getPid(),
       uptime,
-      version: '2.0.0',
+      version: '3.0.0',
       cpuUsage: Math.round(cpuPercent * 100) / 100,
       memUsage: Math.round(memPercent * 100) / 100,
       connections: this.getConnectionCount(),
@@ -278,9 +239,8 @@ export class NodeController extends EventEmitter {
 
   private getConnectionCount(): number {
     try {
-      const { execSync } = require('child_process');
       const output = execSync('ss -t state established 2>/dev/null | wc -l', { encoding: 'utf-8', timeout: 3000 });
-      return Math.max(0, parseInt(output.trim()) - 1); // subtract header
+      return Math.max(0, parseInt(output.trim()) - 1);
     } catch {
       return 0;
     }
@@ -290,5 +250,3 @@ export class NodeController extends EventEmitter {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-import os from 'os';
