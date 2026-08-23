@@ -10,9 +10,9 @@
 #   Domain mode:
 #     sudo bash install.sh -m both -a domain -d panel.example.com -e admin@example.com -u admin -p Pass12345 -y
 #   Direct Server IP mode (like 3X-UI):
-#     sudo bash install.sh -m both -a ip -u admin -p Pass12345 -y
+#     sudo bash install.sh -m both -a ip -P 80 -u admin -p Pass12345 -y
 #   Plain HTTP mode:
-#     sudo bash install.sh -m both -a http -u admin -p Pass12345 -y
+#     sudo bash install.sh -m both -a http -P 80 -u admin -p Pass12345 -y
 # ══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -121,6 +121,7 @@ CLI_DOMAIN=""
 CLI_EMAIL=""
 CLI_USER=""
 CLI_PASS=""
+CLI_PORT=""
 CLI_SECRET=""
 CLI_MASTER_URL=""
 CLI_NON_INTERACTIVE=false
@@ -133,6 +134,7 @@ while [[ $# -gt 0 ]]; do
         -e|--email)      CLI_EMAIL="$2"; shift 2 ;;
         -u|--user)       CLI_USER="$2"; shift 2 ;;
         -p|--pass)       CLI_PASS="$2"; shift 2 ;;
+        -P|--port)       CLI_PORT="$2"; shift 2 ;;
         -s|--secret)     CLI_SECRET="$2"; shift 2 ;;
         --master-url)    CLI_MASTER_URL="$2"; shift 2 ;;
         -y|--yes)        CLI_NON_INTERACTIVE=true; shift ;;
@@ -257,7 +259,7 @@ EOF
     swap_mb=$(free -m 2>/dev/null | awk '/^Swap:/{print $2}' || echo "0")
     if [[ -z "$swap_mb" || "$swap_mb" -lt 1024 ]]; then
         if [[ ! -f /swapfile ]]; then
-            echo -e "  ${CYAN}Creating 2GB swap space for stable Docker builds...${NC}"
+            echo -e "  ${CYAN}Creating 2GB swap space for stable operation...${NC}"
             fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 2>/dev/null || true
             chmod 600 /swapfile 2>/dev/null || true
             mkswap /swapfile >/dev/null 2>&1 || true
@@ -275,7 +277,6 @@ EOF
 configure_firewall() {
     step "SYS 2/2" "Configuring firewall rules safely..."
     if command -v ufw &>/dev/null; then
-        # Detect active SSH port to avoid lockout
         local SSH_PORT="22"
         if [[ -f /etc/ssh/sshd_config ]]; then
             local CONF_PORT
@@ -290,6 +291,9 @@ configure_firewall() {
         ufw allow 443/tcp  >/dev/null 2>&1 || true
         ufw allow 443/udp  >/dev/null 2>&1 || true
         ufw allow 2087/tcp >/dev/null 2>&1 || true
+        if [[ -n "${HTTP_PORT:-}" && "${HTTP_PORT}" != "80" && "${HTTP_PORT}" != "443" ]]; then
+            ufw allow "${HTTP_PORT}/tcp" >/dev/null 2>&1 || true
+        fi
         echo "y" | ufw enable >/dev/null 2>&1 || true
         log "UFW Firewall configured (SSH: ${SSH_PORT}, 80, 443 TCP/UDP, 2087)"
     fi
@@ -434,8 +438,12 @@ install_panel() {
     local ADMIN_EMAIL="$CLI_EMAIL"
     local ADMIN_USER="$CLI_USER"
     local ADMIN_PASS="$CLI_PASS"
+    local PANEL_PORT="${CLI_PORT:-}"
+    local HTTP_PORT="80"
+    local HTTPS_PORT="443"
     local SERVER_IP; SERVER_IP=$(detect_server_ip)
     local PANEL_URL=""
+    local PANEL_HTTPS_URL=""
 
     # ──── 1. Access Method Selection (Domain vs Direct IP vs Plain HTTP) ────
     if [[ -z "$ACCESS_TYPE" ]]; then
@@ -444,8 +452,8 @@ install_panel() {
         else
             echo -e "\n  ${BOLD}Select panel access method:${NC}\n"
             echo -e "    ${CYAN}1${NC}) Domain name       — Automatic Let's Encrypt SSL via ACME"
-            echo -e "    ${CYAN}2${NC}) Server IP address — Self-signed SSL / Direct IP access (like 3X-UI)"
-            echo -e "    ${CYAN}3${NC}) Plain HTTP        — No SSL (for custom reverse proxy / Cloudflare Flexible)\n"
+            echo -e "    ${CYAN}2${NC}) Server IP address — Direct IP access (HTTP/HTTPS like 3X-UI)"
+            echo -e "    ${CYAN}3${NC}) Plain HTTP        — Custom port / Cloudflare Flexible\n"
 
             while true; do
                 safe_read "  Enter choice [1-3]: " ACCESS_CHOICE
@@ -476,25 +484,57 @@ install_panel() {
             if [[ -z "$ADMIN_EMAIL" ]]; then
                 fail "Email is required for Let's Encrypt TLS certificate"
             fi
+            HTTP_PORT="80"
+            HTTPS_PORT="443"
             PANEL_URL="https://${PANEL_DOMAIN}"
+            PANEL_HTTPS_URL="https://${PANEL_DOMAIN}"
             ;;
         2|ip)
             ACCESS_TYPE="ip"
             PANEL_DOMAIN="$SERVER_IP"
-            PANEL_URL="https://${SERVER_IP}"
+            if [[ -z "$PANEL_PORT" ]]; then
+                safe_read "  Panel web port [80]:                      " PANEL_PORT
+                PANEL_PORT="${PANEL_PORT:-80}"
+            fi
+            if [[ "$PANEL_PORT" == "80" ]]; then
+                HTTP_PORT="80"
+                HTTPS_PORT="443"
+                PANEL_URL="http://${SERVER_IP}"
+                PANEL_HTTPS_URL="https://${SERVER_IP}"
+            elif [[ "$PANEL_PORT" == "443" ]]; then
+                HTTP_PORT="80"
+                HTTPS_PORT="443"
+                PANEL_URL="https://${SERVER_IP}"
+                PANEL_HTTPS_URL="https://${SERVER_IP}"
+            else
+                HTTP_PORT="$PANEL_PORT"
+                HTTPS_PORT="443"
+                PANEL_URL="http://${SERVER_IP}:${PANEL_PORT}"
+                PANEL_HTTPS_URL=""
+            fi
             if [[ -z "$ADMIN_EMAIL" ]]; then
                 ADMIN_EMAIL="admin@proxpanel.local"
             fi
-            echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Direct HTTPS)"
+            echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Web Port: ${BOLD}${PANEL_PORT}${NC})"
             ;;
         3|http)
             ACCESS_TYPE="http"
             PANEL_DOMAIN="$SERVER_IP"
-            PANEL_URL="http://${SERVER_IP}"
+            if [[ -z "$PANEL_PORT" ]]; then
+                safe_read "  Panel web port [80]:                      " PANEL_PORT
+                PANEL_PORT="${PANEL_PORT:-80}"
+            fi
+            HTTP_PORT="$PANEL_PORT"
+            HTTPS_PORT="443"
+            if [[ "$HTTP_PORT" == "80" ]]; then
+                PANEL_URL="http://${SERVER_IP}"
+            else
+                PANEL_URL="http://${SERVER_IP}:${HTTP_PORT}"
+            fi
             if [[ -z "$ADMIN_EMAIL" ]]; then
                 ADMIN_EMAIL="admin@proxpanel.local"
             fi
-            echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Plain HTTP)"
+            echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Plain HTTP Port: ${BOLD}${HTTP_PORT}${NC})"
             ;;
         *)
             fail "Invalid access method: $ACCESS_TYPE"
@@ -561,6 +601,8 @@ install_panel() {
     local ENC_KEY; ENC_KEY=$(openssl rand -hex 16 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 32)
 
     cat > "$PANEL_DIR/.env" <<EOF
+HTTP_PORT=${HTTP_PORT}
+HTTPS_PORT=${HTTPS_PORT}
 POSTGRES_PASSWORD=${DB_PASS}
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=7d
@@ -598,6 +640,21 @@ ${PANEL_DOMAIN} {
 EOF
     elif [[ "$ACCESS_TYPE" == "ip" ]]; then
         cat > "$PANEL_DIR/Caddyfile" <<EOF
+:80 {
+    handle /api/* {
+        reverse_proxy server:3000
+    }
+    handle /health {
+        reverse_proxy server:3000
+    }
+    handle /sub/* {
+        reverse_proxy server:3000
+    }
+    handle {
+        reverse_proxy client:80
+    }
+}
+
 :443 {
     tls internal
 
@@ -686,14 +743,17 @@ EOF
     echo -e "  ${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}"
     echo -e ""
     echo -e "  Web Dashboard:   ${BOLD}${PANEL_URL}${NC}"
-    echo -e "  Access Mode:     ${BOLD}${ACCESS_TYPE}${NC}"
+    if [[ -n "$PANEL_HTTPS_URL" && "$PANEL_HTTPS_URL" != "$PANEL_URL" ]]; then
+        echo -e "  Direct HTTPS:    ${BOLD}${PANEL_HTTPS_URL}${NC} (Self-Signed SSL)"
+    fi
+    echo -e "  Access Mode:     ${BOLD}${ACCESS_TYPE}${NC} (Port: ${PANEL_PORT:-80})"
     echo -e "  Admin Login:     ${BOLD}${ADMIN_USER}${NC}"
     echo -e "  Admin Password:  ${BOLD}${ADMIN_PASS}${NC}"
     echo -e "  Node RPC Secret: ${BOLD}${RPC_SECRET}${NC}"
     echo -e ""
     if [[ "$ACCESS_TYPE" == "ip" ]]; then
-        echo -e "  ${YELLOW}Note on Self-Signed SSL:${NC}"
-        echo -e "  When opening ${BOLD}${PANEL_URL}${NC} in browser, click ${CYAN}'Advanced' -> 'Proceed to site'${NC}."
+        echo -e "  ${CYAN}Quick Access:${NC}"
+        echo -e "  Open ${BOLD}${PANEL_URL}${NC} directly in your browser without any SSL warnings."
         echo -e ""
     fi
     echo -e "  Management CLI:  ${CYAN}vpnpanel status | logs | doctor | help${NC}\n"
