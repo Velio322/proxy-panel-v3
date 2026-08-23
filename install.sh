@@ -199,7 +199,7 @@ fi
 RPC_SECRET="$CLI_SECRET"
 
 # ══════════════════════════════════════════════════════════════
-# SYSTEM OPTIMIZATION (SYSCTL & BBR & LIMITS & FIREWALL)
+# SYSTEM OPTIMIZATION (SYSCTL & BBR & LIMITS & SWAP & FIREWALL)
 # ══════════════════════════════════════════════════════════════
 
 apply_system_tuning() {
@@ -251,6 +251,24 @@ root       soft    nproc           524288
 root       hard    nproc           524288
 EOF
     log "Security limits (nofile = 1048576) configured"
+
+    # Auto-swap for low RAM VPS (prevents compilation freezing/OOM killer)
+    local swap_mb
+    swap_mb=$(free -m 2>/dev/null | awk '/^Swap:/{print $2}' || echo "0")
+    if [[ -z "$swap_mb" || "$swap_mb" -lt 1024 ]]; then
+        if [[ ! -f /swapfile ]]; then
+            echo -e "  ${CYAN}Creating 2GB swap space for stable Docker builds...${NC}"
+            fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 2>/dev/null || true
+            chmod 600 /swapfile 2>/dev/null || true
+            mkswap /swapfile >/dev/null 2>&1 || true
+            swapon /swapfile >/dev/null 2>&1 || true
+            if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
+                echo '/swapfile none swap sw 0 0' >> /etc/fstab 2>/dev/null || true
+            fi
+            log "2GB Swap space activated"
+        fi
+    fi
+
     return 0
 }
 
@@ -627,7 +645,7 @@ EOF
     # ──── Build & Start Containers ────
     step "PANEL 4/7" "Building and launching Docker microservices..."
     cd "$PANEL_DIR"
-    docker compose build --parallel
+    docker compose build
     docker compose up -d
     log "Containers started"
 
