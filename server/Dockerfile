@@ -1,44 +1,35 @@
 # ══════════════════════════════════════════════════════════════
-# ProxPanel Server Dockerfile
-# ══════════════════════════════════════════════════════════════
-# Development:  docker build --target development -t proxpanel-server:dev .
-# Production:   docker build -t proxpanel-server:latest .
+# ProxPanel Server Dockerfile — Optimized Fast Multi-Stage Build
 # ══════════════════════════════════════════════════════════════
 
-FROM node:22-alpine AS base
+FROM node:22-alpine AS build
 RUN apk add --no-cache openssl curl
 WORKDIR /app
+
 COPY package*.json ./
 COPY prisma ./prisma
-
-# ── Development target ──
-FROM base AS development
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 RUN npx prisma generate
-COPY . .
-EXPOSE 3000 9090
-CMD ["npm", "run", "dev"]
 
-# ── Production build stage ──
-FROM base AS build
-RUN npm ci
-RUN npx prisma generate
 COPY . .
 RUN npm run build
+RUN npm prune --production --no-audit --no-fund
 
 # ── Production runtime ──
 FROM node:22-alpine AS production
 RUN apk add --no-cache openssl curl
 WORKDIR /app
+
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
 COPY prisma ./prisma
-RUN npx prisma generate
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
 EXPOSE 3000 9090
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
   CMD curl -f http://localhost:3000/api/health || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npm", "start"]

@@ -643,11 +643,10 @@ EOF
     install_cli_tools
 
     # ──── Build & Start Containers ────
-    step "PANEL 4/7" "Building and launching Docker microservices..."
+    step "PANEL 4/7" "Building and launching Docker microservices (Postgres, Redis, Server, Client, Caddy)..."
     cd "$PANEL_DIR"
-    docker compose build
-    docker compose up -d
-    log "Containers started"
+    docker compose up -d --build
+    log "Containers built and started"
 
     # ──── Wait for API Health ────
     step "PANEL 5/7" "Waiting for PostgreSQL and API healthcheck..."
