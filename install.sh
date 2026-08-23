@@ -7,7 +7,12 @@
 #   bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh)
 #
 # Non-interactive usage:
-#   sudo bash install.sh -m both -d panel.example.com -e admin@example.com -u admin -p Pass12345 -y
+#   Domain mode:
+#     sudo bash install.sh -m both -a domain -d panel.example.com -e admin@example.com -u admin -p Pass12345 -y
+#   Direct Server IP mode (like 3X-UI):
+#     sudo bash install.sh -m both -a ip -u admin -p Pass12345 -y
+#   Plain HTTP mode:
+#     sudo bash install.sh -m both -a http -u admin -p Pass12345 -y
 # ══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -60,6 +65,16 @@ trap 'on_error $? $LINENO "$BASH_COMMAND"' ERR
 
 generate_secret() { openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 64; }
 
+detect_server_ip() {
+    local ip=""
+    ip=$(curl -4s --max-time 3 https://api.ipify.org 2>/dev/null || true)
+    [[ -z "$ip" ]] && ip=$(curl -4s --max-time 3 https://ifconfig.me 2>/dev/null || true)
+    [[ -z "$ip" ]] && ip=$(curl -4s --max-time 3 https://icanhazip.com 2>/dev/null || true)
+    [[ -z "$ip" ]] && ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+    [[ -z "$ip" ]] && ip="127.0.0.1"
+    echo "$ip"
+}
+
 safe_read() {
     local prompt="$1"
     local var_name="$2"
@@ -85,6 +100,7 @@ safe_read() {
 
 # ──── CLI Argument Parsing ────
 CLI_MODE=""
+CLI_ACCESS_TYPE=""
 CLI_DOMAIN=""
 CLI_EMAIL=""
 CLI_USER=""
@@ -96,6 +112,7 @@ CLI_NON_INTERACTIVE=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -m|--mode)       CLI_MODE="$2"; shift 2 ;;
+        -a|--access)     CLI_ACCESS_TYPE="$2"; shift 2 ;;
         -d|--domain)     CLI_DOMAIN="$2"; shift 2 ;;
         -e|--email)      CLI_EMAIL="$2"; shift 2 ;;
         -u|--user)       CLI_USER="$2"; shift 2 ;;
@@ -356,19 +373,71 @@ install_cli_tools() {
 # ══════════════════════════════════════════════════════════════
 
 install_panel() {
-    # ──── Collect Configuration First (Interactive / TTY Safe) ────
+    local ACCESS_TYPE="$CLI_ACCESS_TYPE"
     local PANEL_DOMAIN="$CLI_DOMAIN"
     local ADMIN_EMAIL="$CLI_EMAIL"
     local ADMIN_USER="$CLI_USER"
     local ADMIN_PASS="$CLI_PASS"
+    local SERVER_IP; SERVER_IP=$(detect_server_ip)
+    local PANEL_URL=""
 
-    if [[ -z "$PANEL_DOMAIN" ]]; then
-        echo -e "\n  ${BOLD}Panel configuration:${NC}\n"
-        safe_read "  Panel domain (e.g. panel.yourdomain.com): " PANEL_DOMAIN
+    # ──── 1. Access Method Selection (Domain vs Direct IP vs Plain HTTP) ────
+    if [[ -z "$ACCESS_TYPE" ]]; then
+        if [[ -n "$PANEL_DOMAIN" ]]; then
+            ACCESS_TYPE="domain"
+        else
+            echo -e "\n  ${BOLD}Select panel access method:${NC}\n"
+            echo -e "    ${CYAN}1${NC}) Domain name       — Automatic Let's Encrypt SSL via ACME"
+            echo -e "    ${CYAN}2${NC}) Server IP address — Self-signed SSL / Direct IP access (like 3X-UI)"
+            echo -e "    ${CYAN}3${NC}) Plain HTTP        — No SSL (for custom reverse proxy / Cloudflare Flexible)\n"
+
+            while true; do
+                safe_read "  Enter choice [1-3]: " ACCESS_CHOICE
+                case "$ACCESS_CHOICE" in
+                    1) ACCESS_TYPE="domain"; break ;;
+                    2) ACCESS_TYPE="ip";     break ;;
+                    3) ACCESS_TYPE="http";   break ;;
+                    *) echo -e "  ${RED}Invalid choice. Please enter 1, 2, or 3.${NC}" ;;
+                esac
+            done
+        fi
     fi
-    if [[ -z "$ADMIN_EMAIL" ]]; then
-        safe_read "  Admin email (for TLS cert & alerts):      " ADMIN_EMAIL
-    fi
+
+    # ──── 2. Collect Parameters Based on Access Type ────
+    case "$ACCESS_TYPE" in
+        1|domain)
+            ACCESS_TYPE="domain"
+            if [[ -z "$PANEL_DOMAIN" ]]; then
+                echo -e "\n  ${BOLD}Domain configuration:${NC}"
+                safe_read "  Panel domain (e.g. panel.yourdomain.com): " PANEL_DOMAIN
+            fi
+            if [[ -z "$ADMIN_EMAIL" ]]; then
+                safe_read "  Admin email (for TLS certificate):        " ADMIN_EMAIL
+            fi
+            [[ -z "$PANEL_DOMAIN" ]] && fail "Domain is required for domain access mode"
+            [[ -z "$ADMIN_EMAIL"  ]] && fail "Email is required for Let's Encrypt TLS certificate"
+            PANEL_URL="https://${PANEL_DOMAIN}"
+            ;;
+        2|ip)
+            ACCESS_TYPE="ip"
+            PANEL_DOMAIN="$SERVER_IP"
+            PANEL_URL="https://${SERVER_IP}"
+            ADMIN_EMAIL="${ADMIN_EMAIL:-admin@proxpanel.local}"
+            echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Direct HTTPS)"
+            ;;
+        3|http)
+            ACCESS_TYPE="http"
+            PANEL_DOMAIN="$SERVER_IP"
+            PANEL_URL="http://${SERVER_IP}"
+            ADMIN_EMAIL="${ADMIN_EMAIL:-admin@proxpanel.local}"
+            echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Plain HTTP)"
+            ;;
+        *)
+            fail "Invalid access method: $ACCESS_TYPE"
+            ;;
+    esac
+
+    # ──── 3. Admin Credentials ────
     if [[ -z "$ADMIN_USER" ]]; then
         safe_read "  Admin username [admin]:                   " ADMIN_USER
         ADMIN_USER="${ADMIN_USER:-admin}"
@@ -377,9 +446,7 @@ install_panel() {
         safe_read "  Admin password (min 8 chars):             " ADMIN_PASS true
     fi
 
-    [[ -z "$PANEL_DOMAIN" ]] && fail "Domain is required (e.g. panel.yourdomain.com)"
-    [[ -z "$ADMIN_EMAIL"  ]] && fail "Email is required"
-    [[ -z "$ADMIN_PASS"   ]] && fail "Password is required"
+    [[ -z "$ADMIN_PASS" ]] && fail "Admin password is required"
     [[ ${#ADMIN_PASS} -lt 8 ]] && fail "Password must be at least 8 characters long"
 
     # ──── System Dependencies ────
@@ -414,7 +481,7 @@ install_panel() {
     log "Source code downloaded"
 
     # ──── Setup Directory ────
-    step "PANEL 3/7" "Configuring environment and Caddyfile..."
+    step "PANEL 3/7" "Configuring environment and Caddyfile for ${ACCESS_TYPE} mode..."
     mkdir -p "$PANEL_DIR"
     cp -r "$CLONE_DIR"/. "$PANEL_DIR/"
 
@@ -429,8 +496,8 @@ JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=7d
 NODE_RPC_SECRET=${RPC_SECRET}
 ENCRYPTION_KEY=${ENC_KEY}
-API_URL=https://${PANEL_DOMAIN}
-FRONTEND_URL=https://${PANEL_DOMAIN}
+API_URL=${PANEL_URL}
+FRONTEND_URL=${PANEL_URL}
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ADMIN_IDS=
 CRYPTOPAY_TOKEN=
@@ -439,7 +506,9 @@ STRIPE_WEBHOOK_SECRET=
 BACKUP_ENABLED=false
 EOF
 
-    cat > "$PANEL_DIR/Caddyfile" <<EOF
+    # Generate Caddyfile according to selected access type
+    if [[ "$ACCESS_TYPE" == "domain" ]]; then
+        cat > "$PANEL_DIR/Caddyfile" <<EOF
 ${PANEL_DOMAIN} {
     tls ${ADMIN_EMAIL}
 
@@ -457,6 +526,44 @@ ${PANEL_DOMAIN} {
     }
 }
 EOF
+    elif [[ "$ACCESS_TYPE" == "ip" ]]; then
+        cat > "$PANEL_DIR/Caddyfile" <<EOF
+:443 {
+    tls internal
+
+    handle /api/* {
+        reverse_proxy server:3000
+    }
+    handle /health {
+        reverse_proxy server:3000
+    }
+    handle /sub/* {
+        reverse_proxy server:3000
+    }
+    handle {
+        reverse_proxy client:80
+    }
+}
+EOF
+    else # http
+        cat > "$PANEL_DIR/Caddyfile" <<EOF
+:80 {
+    handle /api/* {
+        reverse_proxy server:3000
+    }
+    handle /health {
+        reverse_proxy server:3000
+    }
+    handle /sub/* {
+        reverse_proxy server:3000
+    }
+    handle {
+        reverse_proxy client:80
+    }
+}
+EOF
+    fi
+
     log "Configuration files ready at ${PANEL_DIR}"
 
     # ──── System Tuning & Cores ────
@@ -509,11 +616,17 @@ EOF
     echo -e "  ${GREEN}${BOLD}║           ProxPanel v3 Successfully Installed!             ║${NC}"
     echo -e "  ${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}"
     echo -e ""
-    echo -e "  Web Dashboard:   ${BOLD}https://${PANEL_DOMAIN}${NC}"
+    echo -e "  Web Dashboard:   ${BOLD}${PANEL_URL}${NC}"
+    echo -e "  Access Mode:     ${BOLD}${ACCESS_TYPE}${NC}"
     echo -e "  Admin Login:     ${BOLD}${ADMIN_USER}${NC}"
     echo -e "  Admin Password:  ${BOLD}${ADMIN_PASS}${NC}"
     echo -e "  Node RPC Secret: ${BOLD}${RPC_SECRET}${NC}"
     echo -e ""
+    if [[ "$ACCESS_TYPE" == "ip" ]]; then
+        echo -e "  ${YELLOW}Note on Self-Signed SSL:${NC}"
+        echo -e "  When opening ${BOLD}${PANEL_URL}${NC} in browser, click ${CYAN}'Advanced' -> 'Proceed to site'${NC}."
+        echo -e ""
+    fi
     echo -e "  Management CLI:  ${CYAN}vpnpanel status | logs | doctor | help${NC}\n"
 }
 
