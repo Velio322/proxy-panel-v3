@@ -26,7 +26,8 @@ export function MainLayout() {
 
   const titleKey = PAGE_TITLES[location.pathname] || '';
   const pageTitle = titleKey ? t(titleKey) : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2);
-  const pagePath = location.pathname === '/' ? ['Dashboard'] : ['Dashboard', pageTitle];
+  const dashboardTitle = t('nav.dashboard') || 'Dashboard';
+  const pagePath = location.pathname === '/' ? [dashboardTitle] : [dashboardTitle, pageTitle];
 
   return (
     <div className="h-screen flex overflow-hidden bg-bg text-fg">

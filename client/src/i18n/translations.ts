@@ -45,10 +45,15 @@ const translations: Record<string, Record<string, string>> = {
     'nav.clients': 'Clients',
     'nav.inbounds': 'Inbounds',
     'nav.monitoring': 'Monitoring',
+    'nav.routing': 'Routing',
     'nav.plans': 'Plans',
     'nav.users': 'Users',
     'nav.audit': 'Audit Log',
     'nav.settings': 'Settings',
+
+    // Sidebar
+    'sidebar.overview': 'Overview',
+    'sidebar.administration': 'Administration',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -546,10 +551,14 @@ const translations: Record<string, Record<string, string>> = {
     'nav.clients': 'Клиенты',
     'nav.inbounds': 'Инбаунды',
     'nav.monitoring': 'Мониторинг',
+    'nav.routing': 'Маршрутизация',
     'nav.plans': 'Тарифы',
     'nav.users': 'Пользователи',
     'nav.audit': 'Журнал',
     'nav.settings': 'Настройки',
+
+    'sidebar.overview': 'Обзор',
+    'sidebar.administration': 'Администрирование',
 
     'dashboard.title': 'Панель управления',
     'dashboard.subtitle': 'Обзор системы и статистика в реальном времени',
@@ -1010,10 +1019,14 @@ const translations: Record<string, Record<string, string>> = {
     'nav.clients': '客户',
     'nav.inbounds': '入站',
     'nav.monitoring': '监控',
+    'nav.routing': '路由',
     'nav.plans': '套餐',
     'nav.users': '用户',
     'nav.audit': '审计日志',
     'nav.settings': '设置',
+
+    'sidebar.overview': '概览',
+    'sidebar.administration': '系统管理',
     'dashboard.title': '控制面板',
     'clients.title': '客户管理',
     'clients.addClient': '添加客户',
@@ -1048,10 +1061,14 @@ const translations: Record<string, Record<string, string>> = {
     'nav.clients': 'مشتریان',
     'nav.inbounds': 'ورودی‌ها',
     'nav.monitoring': 'مانیتورینگ',
+    'nav.routing': 'مسیریابی',
     'nav.plans': 'طرح‌ها',
     'nav.users': 'کاربران',
     'nav.audit': 'گزارش',
     'nav.settings': 'تنظیمات',
+
+    'sidebar.overview': 'بررسی اجمالی',
+    'sidebar.administration': 'مدیریت',
     'dashboard.title': 'داشبورد',
     'clients.title': 'مدیریت مشتریان',
     'clients.addClient': 'افزودن مشتری',

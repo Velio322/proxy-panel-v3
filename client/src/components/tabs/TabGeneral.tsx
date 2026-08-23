@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn, generateUUID, generatePassword } from '@/lib/utils';
 
 const inputCls = "w-full px-2.5 py-1.5 rounded-lg bg-bg-raised border border-border text-fg text-xs focus:outline-none focus:border-[hsl(var(--accent))] focus:ring-1 focus:ring-[hsl(var(--accent/0.15))]";
 const labelCls = "block text-[11px] font-medium text-fg-subtle mb-1";
@@ -27,7 +27,7 @@ interface GeneralTabProps {
   nodes: { id: string; name: string; host: string; status: string }[];
 }
 
-export function TabGeneral({ form, update, nodes }: GeneralTabProps) {
+export function TabGeneral({ form, update, nodes = [] }: GeneralTabProps) {
   return (
     <div className="space-y-5">
       {/* ──── Target Node ──── */}
@@ -36,7 +36,7 @@ export function TabGeneral({ form, update, nodes }: GeneralTabProps) {
           <label className={labelCls}>Node *</label>
           <select className={inputCls} value={form.nodeId} onChange={(e) => update('nodeId', e.target.value)}>
             <option value="">Select node...</option>
-            {nodes.map((n) => (
+            {(nodes || []).map((n) => (
               <option key={n.id} value={n.id}>
                 {n.name} ({n.host}) — {n.status}
               </option>
@@ -114,7 +114,8 @@ export function TabGeneral({ form, update, nodes }: GeneralTabProps) {
                   <input className={cn(inputCls, "flex-1")} value={form.uuid || ''}
                     onChange={(e) => update('uuid', e.target.value)}
                     placeholder="Auto-generated if empty" />
-                  <button onClick={() => update('uuid', crypto.randomUUID())}
+                  <button onClick={() => update('uuid', generateUUID())}
+                    type="button"
                     className="px-2.5 rounded-lg bg-bg-raised border border-border text-fg-muted hover:text-[hsl(var(--accent))] text-[11px] shrink-0 transition-colors">
                     Gen
                   </button>
@@ -152,7 +153,8 @@ export function TabGeneral({ form, update, nodes }: GeneralTabProps) {
                 <input className={cn(inputCls, "flex-1")} value={form.password || ''}
                   onChange={(e) => update('password', e.target.value)}
                   placeholder="Auto-generated if empty" />
-                <button onClick={() => update('password', crypto.randomUUID().replace(/-/g, '').substring(0, 16))}
+                <button onClick={() => update('password', generatePassword(16))}
+                  type="button"
                   className="px-2.5 rounded-lg bg-bg-raised border border-border text-fg-muted hover:text-[hsl(var(--accent))] text-[11px] shrink-0 transition-colors">
                   Gen
                 </button>

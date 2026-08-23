@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { inboundsApi, nodesApi, Inbound } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, generateUUID, generatePassword } from '@/lib/utils';
 import { Loader2, Network } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { InboundsHeader } from './inbounds/components/InboundsHeader';
@@ -14,24 +14,24 @@ function formToPayload(form: InboundForm) {
 
   let settings: Record<string, any> = {};
   if (['VLESS', 'VMESS'].includes(form.protocol)) {
-    settings = { id: form.uuid || crypto.randomUUID(), flow: form.protocol === 'VLESS' ? form.flow || undefined : undefined };
+    settings = { id: form.uuid || generateUUID(), flow: form.protocol === 'VLESS' ? form.flow || undefined : undefined };
     if (form.protocol === 'VMESS') settings.alterId = form.alterId;
   } else if (form.protocol === 'TROJAN') {
-    settings = { password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16) };
+    settings = { password: form.password || generatePassword(16) };
   } else if (form.protocol === 'SHADOWSOCKS') {
-    settings = { method: form.method, password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16) };
+    settings = { method: form.method, password: form.password || generatePassword(16) };
   } else if (form.protocol === 'HYSTERIA2') {
     settings = {
-      password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16),
+      password: form.password || generatePassword(16),
       obfs: form.hy2ObfsType !== 'none' ? { type: form.hy2ObfsType, password: form.hy2ObfsPassword } : undefined,
       bandwidth: { up: form.hy2BandwidthUp, down: form.hy2BandwidthDown },
       maxClient: form.hy2MaxClient || undefined,
       maxStream: form.hy2MaxStream || undefined,
     };
   } else if (form.protocol === 'NAIVEPROXY') {
-    settings = { username: 'user', password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16), domain: form.sni || '', sni: form.sni || '' };
+    settings = { username: 'user', password: form.password || generatePassword(16), domain: form.sni || '', sni: form.sni || '' };
   } else if (form.protocol === 'MIERU') {
-    settings = { username: 'user', password: form.password || crypto.randomUUID().replace(/-/g, '').substring(0, 16), transport: 'tcp', multiplexing: 'MULTIPLEXING_HIGH' };
+    settings = { username: 'user', password: form.password || generatePassword(16), transport: 'tcp', multiplexing: 'MULTIPLEXING_HIGH' };
   }
 
   let stream: Record<string, any> = {};

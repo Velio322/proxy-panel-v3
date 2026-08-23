@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodesApi, inboundsApi } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, generateUUID, generatePassword } from '@/lib/utils';
 import { useI18n } from '@/i18n';
 import { Check, Loader2, PlusCircle, Info } from 'lucide-react';
 import { Modal, TabBar, Field } from './common';
@@ -60,13 +60,13 @@ export function CreateNodeModal({ onClose }: NodeComponentProps) {
         tags: tags ? tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
       });
       for (const inb of inbounds) {
-        const password = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+        const password = generatePassword(16);
 
         let settings: Record<string, any> = {};
         let stream: Record<string, any> = {};
 
         if (inb.protocol === 'VLESS') {
-          settings = { id: crypto.randomUUID(), flow: inb.flow };
+          settings = { id: generateUUID(), flow: inb.flow };
           stream = { security: inb.security, sni: inb.sni, fingerprint: inb.fingerprint, network: inb.transport };
           if (inb.security === 'reality') {
             stream.publicKey = inb.realityPublicKey;
@@ -76,7 +76,7 @@ export function CreateNodeModal({ onClose }: NodeComponentProps) {
             stream.serverNames = [inb.sni];
           }
         } else if (inb.protocol === 'VMESS') {
-          settings = { id: crypto.randomUUID() };
+          settings = { id: generateUUID() };
           stream = { security: inb.security, sni: inb.sni, fingerprint: inb.fingerprint, network: inb.transport };
         } else if (inb.protocol === 'TROJAN') {
           settings = { password };
@@ -156,7 +156,8 @@ export function CreateNodeModal({ onClose }: NodeComponentProps) {
                   value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Worker NODE_RPC_SECRET" 
                 />
                 <button 
-                  onClick={() => setSecret(crypto.randomUUID().replace(/-/g, ''))}
+                  type="button"
+                  onClick={() => setSecret(generatePassword(32))}
                   className="px-4 rounded-lg border border-border text-fg-muted hover:bg-bg-raised text-xs font-bold transition-all shrink-0"
                 >
                   {t('nodes.gen')}

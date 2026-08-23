@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
@@ -6,7 +7,7 @@ import { useI18n } from '@/i18n';
 export function Modal({ onClose, title, maxW = 'max-w-lg', children }: {
   onClose: () => void; title: string; maxW?: string; children: React.ReactNode;
 }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
       <div
         className={cn("bg-surface/90 border border-border rounded-2xl w-full shadow-2xl max-h-[90vh] flex flex-col overflow-hidden backdrop-blur-xl", maxW)}
@@ -20,7 +21,8 @@ export function Modal({ onClose, title, maxW = 'max-w-lg', children }: {
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

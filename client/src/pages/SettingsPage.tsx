@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useI18n } from '@/i18n';
 import { useAppStore } from '@/lib/store';
 import { settingsApi } from '@/lib/api';
@@ -37,10 +37,10 @@ const TABS = [
 ];
 
 const LANGUAGES = [
-  { code: 'en', label: 'English',  flag: 'рџ‡¬рџ‡§' },
-  { code: 'ru', label: 'Р СѓСЃСЃРєРёР№',  flag: 'рџ‡·рџ‡є' },
-  { code: 'zh', label: 'дё­ж–‡',      flag: 'рџ‡Ёрџ‡і' },
-  { code: 'fa', label: 'ЩЃШ§Ш±ШіЫЊ',    flag: 'рџ‡®рџ‡·' },
+  { code: 'en', label: 'English', flag: '🇬🇧' },
+  { code: 'ru', label: 'Русский', flag: '🇷🇺' },
+  { code: 'zh', label: '中文', flag: '🇨🇳' },
+  { code: 'fa', label: 'فارسی', flag: '🇮🇷' },
 ];
 
 export function SettingsPage() {

@@ -1,6 +1,8 @@
-﻿import { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, ChevronLeft, ChevronRight, KeyRound, Sparkles } from 'lucide-react';
 import { Inbound } from '@/lib/api';
+import { generateUUID, generatePassword } from '@/lib/utils';
 
 export type Protocol = 'VLESS' | 'VMESS' | 'TROJAN' | 'SHADOWSOCKS' | 'HYSTERIA2' | 'NAIVEPROXY' | 'MIERU' | 'TUIC';
 export type Security = 'none' | 'tls' | 'reality';
@@ -118,7 +120,7 @@ interface InboundModalProps {
   onSave: (data: InboundForm) => Promise<void>;
 }
 
-export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalProps) {
+export function InboundModal({ inbound, nodes = [], onClose, onSave }: InboundModalProps) {
   const [tab, setTab] = useState<TabKey>('general');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<InboundForm>(() => (inbound ? inboundToForm(inbound) : defaultForm()));
@@ -138,7 +140,7 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
 
   const ti = TABS.findIndex((t) => t.key === tab);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
         className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden"
@@ -227,7 +229,8 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 // Tab: General
@@ -245,9 +248,9 @@ function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: ke
             onChange={(e) => update('nodeId', e.target.value)}
           >
             <option value="">-- Choose target node --</option>
-            {nodes.map((n) => (
+            {(nodes || []).map((n) => (
               <option key={n.id} value={n.id}>
-                {n.name} ({n.host}) вЂ” [{n.status}]
+                {n.name} ({n.host}) — [{n.status}]
               </option>
             ))}
           </select>
@@ -342,7 +345,7 @@ function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: ke
                 />
                 <button
                   type="button"
-                  onClick={() => update('uuid', crypto.randomUUID())}
+                  onClick={() => update('uuid', generateUUID())}
                   className="px-3 py-2 rounded-xl bg-bg-raised border border-border text-xs font-bold text-fg-muted hover:text-fg hover:border-accent"
                 >
                   Gen
@@ -378,7 +381,7 @@ function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: ke
                 />
                 <button
                   type="button"
-                  onClick={() => update('password', crypto.randomUUID().replace(/-/g, '').substring(0, 16))}
+                  onClick={() => update('password', generatePassword(16))}
                   className="px-3 py-2 rounded-xl bg-bg-raised border border-border text-xs font-bold text-fg-muted hover:text-fg hover:border-accent"
                 >
                   Gen
@@ -814,86 +817,6 @@ function TabAdvancedJSON({ form }: { form: InboundForm }) {
   );
 }
 // Tab: Port Sharing
-function TabPortShare({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
-  const addShare = () => {
-    update('portShares', [
-      ...(form.portShares || []),
-      { protocol: 'VLESS' as Protocol, tag: `ps-${Date.now()}`, host: '', path: '', enable: true },
-    ]);
-  };
-
-  const removeShare = (idx: number) => {
-    update('portShares', (form.portShares || []).filter((_, i) => i !== idx));
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-fg-subtle">SNI / Fallback Port Shares</h3>
-        <button
-          type="button"
-          onClick={addShare}
-          className="px-3 py-1.5 rounded-xl bg-accent-muted text-accent border border-accent/20 text-xs font-bold hover:bg-accent hover:text-white transition-colors"
-        >
-          + Add Port Share
-        </button>
-      </div>
-
-      {(form.portShares || []).length === 0 ? (
-        <div className="p-8 text-center rounded-xl bg-surface border border-border text-xs text-fg-subtle">
-          No port sharing configured. All traffic on port {form.port} will route directly to this inbound.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {form.portShares.map((ps, idx) => (
-            <div key={idx} className="p-3.5 rounded-xl bg-surface border border-border space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <input
-                  type="text"
-                  className="input-base font-mono text-xs flex-1"
-                  value={ps.tag}
-                  onChange={(e) => {
-                    const shares = [...form.portShares];
-                    shares[idx].tag = e.target.value;
-                    update('portShares', shares);
-                  }}
-                  placeholder="Share tag"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeShare(idx)}
-                  className="p-1.5 rounded-lg text-danger hover:bg-danger-muted/30"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function defaultForm(): InboundForm {
-  return {
-    nodeId: '',
-    protocol: 'VLESS',
-    tag: 'vless-reality-443',
-    port: 443,
-    listen: '0.0.0.0',
-    enable: true,
-    remark: '',
-    sniffing: true,
-    security: 'reality',
-    uuid: crypto.randomUUID(),
-    password: crypto.randomUUID().replace(/-/g, '').substring(0, 16),
-    flow: 'xtls-rprx-vision',
-    method: 'aes-256-gcm',
-    alterId: 0,
-    transport: 'tcp',
-    sni: 'www.microsoft.com',
-    fingerprint: 'chrome',
     alpn: 'h2,http/1.1',
     allowInsecure: false,
     minVersion: '1.2',

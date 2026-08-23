@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, User } from '@/lib/api';
 import { formatDate, cn } from '@/lib/utils';
@@ -328,17 +329,18 @@ const labelCls = "block text-[11px] font-medium text-fg-subtle mb-1";
 function Modal({ onClose, title, maxW = 'max-w-lg', children }: {
   onClose: () => void; title: string; maxW?: string; children: React.ReactNode;
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className={cn("bg-surface border border-border rounded-xl w-full shadow-xl max-h-[85vh] flex flex-col", maxW)}
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
+      <div className={cn("bg-surface border border-border rounded-2xl w-full shadow-2xl max-h-[85vh] flex flex-col overflow-hidden", maxW)}
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-          <h2 className="text-sm font-semibold text-fg">{title}</h2>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-bg-raised text-fg-muted"><X size={16} /></button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/80 bg-bg-raised/40 shrink-0">
+          <h2 className="text-sm font-bold text-fg">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-surface-hover text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
