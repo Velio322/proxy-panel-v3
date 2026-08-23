@@ -1,4 +1,4 @@
-import { getPrisma } from '../lib/prisma';
+﻿import { getPrisma } from '../lib/prisma';
 import { getRedis } from '../lib/redis';
 import { EventEmitter } from 'events';
 
@@ -20,12 +20,12 @@ interface PendingTraffic {
 }
 
 /**
- * TrafficBatcher — accumulates traffic writes in Redis, flushes to PostgreSQL in bulk.
+ * TrafficBatcher вЂ” accumulates traffic writes in Redis, flushes to PostgreSQL in bulk.
  *
- * Problem: 10K users × 1 report/min = 166 individual INSERT/sec → DB overload.
+ * Problem: 10K users Г— 1 report/min = 166 individual INSERT/sec в†’ DB overload.
  * Solution: Accumulate in Redis sorted sets, flush every N seconds as single bulk INSERT.
  *
- * Write path: TrafficReport → Redis ZINCRBY → (every 30s) → Prisma createMany → PostgreSQL
+ * Write path: TrafficReport в†’ Redis ZINCRBY в†’ (every 30s) в†’ Prisma createMany в†’ PostgreSQL
  */
 export class TrafficBatcher extends EventEmitter {
   private flushIntervalMs: number;
@@ -156,7 +156,6 @@ export class TrafficBatcher extends EventEmitter {
       const r = getRedis();
       const prisma = getPrisma();
 
-      // Get all pending node keys
       const nodeKeys = await r.zrange('traffic_pending_keys', 0, -1);
       if (nodeKeys.length === 0) {
         this.isFlushing = false;
@@ -167,7 +166,6 @@ export class TrafficBatcher extends EventEmitter {
       const allEntries: TrafficEntry[] = [];
       const flushSnapshotTime = Date.now();
 
-      // Process each node's pending traffic up to snapshot timestamp
       for (const nodeId of nodeKeys) {
         const pendingKey = `traffic_pending:${nodeId}`;
         const items = await r.zrangebyscore(pendingKey, '-inf', flushSnapshotTime);
@@ -179,7 +177,6 @@ export class TrafficBatcher extends EventEmitter {
 
         for (const item of items) {
           try {
-            // Handle both legacy (clientId:json) and new (pure json) member formats
             const jsonStr = item.startsWith('{') ? item : item.substring(item.indexOf('{'));
             const data = JSON.parse(jsonStr);
             const existing = clientAgg.get(data.clientId);
@@ -192,7 +189,6 @@ export class TrafficBatcher extends EventEmitter {
           } catch {}
         }
 
-        // Convert to TrafficEntry
         const now = new Date();
         for (const [, agg] of clientAgg) {
           if (agg.upload === 0 && agg.download === 0) continue;
@@ -233,7 +229,6 @@ export class TrafficBatcher extends EventEmitter {
           });
         }
 
-        // Update client cumulative counters
         const clientUpdates = new Map<string, { upload: number; download: number }>();
         for (const entry of allEntries) {
           const existing = clientUpdates.get(entry.clientId);

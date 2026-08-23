@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import { InboundConfig } from '../types';
 
@@ -13,7 +13,7 @@ interface PortGroup {
   upstreamPort: number;
 }
 
-// Protocol → internal port offset mapping
+// Protocol в†’ internal port offset mapping
 const PROTOCOL_OFFSETS: Record<string, number> = {
   VLESS: 0, VMESS: 100, TROJAN: 200, SHADOWSOCKS: 300,
   HYSTERIA2: 400, NAIVEPROXY: 500, MIERU: 600, TUIC: 700,
@@ -22,7 +22,7 @@ const PROTOCOL_OFFSETS: Record<string, number> = {
 const INTERNAL_BASE_PORT = 10000;
 
 /**
- * PortSharingEngine — handles SNI-based multiplexing on shared ports.
+ * PortSharingEngine вЂ” handles SNI-based multiplexing on shared ports.
  * Generates HAProxy configs for TCP-level SNI routing.
  */
 export class PortSharingEngine {
@@ -53,9 +53,9 @@ export class PortSharingEngine {
 
     for (const [port, portInbounds] of portMap) {
       const protocols = new Set(portInbounds.map((i) => i.protocol));
-      if (protocols.size <= 1) continue; // No sharing needed — single protocol on port
+      if (protocols.size <= 1) continue; // No sharing needed вЂ” single protocol on port
 
-      // Multiple protocols on same port — need SNI routing
+      // Multiple protocols on same port вЂ” need SNI routing
       const groups: PortGroup[] = [];
       for (const inb of portInbounds) {
         const settings = inb.settings || {};
@@ -80,7 +80,7 @@ export class PortSharingEngine {
 
   /**
    * Assign unique internal port for a port-shared inbound.
-   * External :443 → Internal :10000+offset+hash
+   * External :443 в†’ Internal :10000+offset+hash
    */
   getUpstreamPort(inbound: InboundConfig): number {
     const offset = PROTOCOL_OFFSETS[inbound.protocol] || 0;
@@ -123,11 +123,11 @@ export class PortSharingEngine {
    * Generate complete HAProxy configuration for SNI-based TCP routing.
    */
   generateHAProxyConfig(portGroups: Map<number, PortGroup[]>): string {
-    let config = `# ══════════════════════════════════════════════
+    let config = `# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 # ProxPanel HAProxy SNI Router
-# Auto-generated — do not edit manually
+# Auto-generated вЂ” do not edit manually
 # Generated: ${new Date().toISOString()}
-# ══════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 global
     log /dev/log local0
@@ -153,9 +153,9 @@ defaults
     timeout tunnel 3600s
     retries 3
 
-# ══════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 # Stats endpoint
-# ══════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 listen stats
     bind *:8404
     mode http
@@ -174,7 +174,7 @@ listen stats
       const allSnis = groups.map((g) => g.sni).filter(Boolean);
 
       config += `
-# ──── Port ${port} (${groups.length} protocols) ────
+# в”Ђв”Ђв”Ђв”Ђ Port ${port} (${groups.length} protocols) в”Ђв”Ђв”Ђв”Ђ
 frontend ${feName}
     bind *:${port}
     mode tcp
@@ -240,10 +240,10 @@ backend ${backendName}
    * Generate Nginx stream config (alternative to HAProxy).
    */
   generateNginxStreamConfig(portGroups: Map<number, PortGroup[]>): string {
-    let config = `# ══════════════════════════════════════════════
+    let config = `# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 # ProxPanel Nginx Stream SNI Router
-# Auto-generated — do not edit manually
-# ══════════════════════════════════════════════
+# Auto-generated вЂ” do not edit manually
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 stream {
     log_format proxy '$remote_addr [$time_local] '
@@ -260,7 +260,7 @@ stream {
 
     for (const [port, groups] of portGroups) {
       config += `
-    # ──── Port ${port} (${groups.length} protocols) ────
+    # в”Ђв”Ђв”Ђв”Ђ Port ${port} (${groups.length} protocols) в”Ђв”Ђв”Ђв”Ђ
     map $ssl_preread_server_name $backend_${port} {
 `;
       for (const group of groups) {
@@ -283,9 +283,7 @@ stream {
     config += '\n}\n';
     return config;
   }
-
-  // ──── HAProxy Process Management ────
-
+// HAProxy Process Management
   writeHAProxyConfig(config: string): void {
     const configPath = path.join(this.configDir, 'haproxy.cfg');
     fs.mkdirSync(this.configDir, { recursive: true });
@@ -296,7 +294,6 @@ stream {
   reloadHAProxy(): boolean {
     try {
       const { execSync } = require('child_process');
-      // Validate config first
       execSync(`${this.haproxyPath} -c -f ${path.join(this.configDir, 'haproxy.cfg')}`, {
         encoding: 'utf-8',
         timeout: 5000,

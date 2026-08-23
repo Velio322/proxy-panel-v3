@@ -122,10 +122,6 @@ export function UsersPage() {
   );
 }
 
-// ══════════════════════════════════════════════
-// User Row
-// ══════════════════════════════════════════════
-
 function UserRow({ user: u, onEdit, onBan, onResetPass, onDelete }: {
   user: User; onEdit: () => void; onBan: () => void; onResetPass: () => void; onDelete: () => void;
 }) {
@@ -212,10 +208,6 @@ function UserRow({ user: u, onEdit, onBan, onResetPass, onDelete }: {
     </tr>
   );
 }
-
-// ══════════════════════════════════════════════
-// User Modal (Create/Edit)
-// ══════════════════════════════════════════════
 
 function UserModal({ user, onClose }: { user?: User; onClose: () => void }) {
   const { t } = useI18n();
@@ -329,10 +321,6 @@ function UserModal({ user, onClose }: { user?: User; onClose: () => void }) {
     </Modal>
   );
 }
-
-// ══════════════════════════════════════════════
-// Shared Components
-// ══════════════════════════════════════════════
 
 const inputCls = "w-full px-2.5 py-1.5 rounded-lg bg-bg-raised border border-border text-fg text-xs focus:outline-none focus:border-[hsl(var(--accent))] focus:ring-1 focus:ring-[hsl(var(--accent/0.15))]";
 const labelCls = "block text-[11px] font-medium text-fg-subtle mb-1";

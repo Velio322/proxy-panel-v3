@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unit Tests: Config Hydrator
  * Tests for Xray config generation, edge cases, conflict resolution.
  */
@@ -10,9 +10,7 @@ import path from 'path';
 
 const CONFIG_DIR = '/tmp/proxpanel-test-configs';
 const hydrator = new ConfigHydrator(CONFIG_DIR);
-
-// ──── Helpers ────
-
+// Helpers
 function makeInbound(overrides: Partial<InboundConfig> = {}): InboundConfig {
   return {
     id: 'test-id',
@@ -35,9 +33,7 @@ function cleanup() {
     fs.rmSync(CONFIG_DIR, { recursive: true });
   }
 }
-
-// ──── Tests ────
-
+// Tests
 describe('ConfigHydrator', () => {
   beforeAll(() => cleanup());
   afterAll(() => cleanup());

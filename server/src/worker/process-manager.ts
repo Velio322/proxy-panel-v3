@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+﻿import { ChildProcess, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
@@ -252,7 +252,6 @@ export class ProcessManager extends EventEmitter {
   private startTime: number = Date.now();
   private currentInbounds: InboundConfig[] = [];
 
-  // Process states
   private cores: Map<string, ProcessState> = new Map();
 
   // Log buffers (per core)
@@ -287,7 +286,6 @@ export class ProcessManager extends EventEmitter {
       haproxy: config.haproxyEnabled ?? true,
     });
 
-    // Initialize log buffers
     for (const name of ['xray', 'singbox', 'naive', 'mieru']) {
       this.logBuffers.set(name, new RingBuffer(500));
     }
@@ -325,10 +323,6 @@ export class ProcessManager extends EventEmitter {
       }
     }
   }
-
-  // ══════════════════════════════════════════════
-  // Process Lifecycle
-  // ══════════════════════════════════════════════
 
   applyConfig(inbounds: InboundConfig[]): boolean {
     console.log(`[PM] Applying config: ${inbounds.length} inbounds`);
@@ -491,7 +485,6 @@ export class ProcessManager extends EventEmitter {
   }
 
   private scheduleRestart(name: string, state: ProcessState): void {
-    // Check restart limits
     const now = Date.now();
     if (state.restartCount >= this.maxRestarts) {
       console.error(`[PM] ${name}: Max restarts (${this.maxRestarts}) reached. Giving up.`);

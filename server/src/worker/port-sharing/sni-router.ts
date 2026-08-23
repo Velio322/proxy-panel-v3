@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import { InboundConfig, PortShareConfig } from '../types';
 
@@ -41,7 +41,7 @@ export class SNIRouter {
     for (const inbound of inbounds) {
       if (!inbound.enable) continue;
 
-      // Direct port inbounds — no sharing needed
+      // Direct port inbounds вЂ” no sharing needed
       if (!inbound.portShares || inbound.portShares.length === 0) continue;
 
       for (const ps of inbound.portShares) {
@@ -96,7 +96,7 @@ export class SNIRouter {
    */
   generateHAProxyConfig(portGroups: Map<number, PortShareMapping[]>): string {
     let config = `# ProxPanel HAProxy SNI Router
-# Auto-generated — do not edit manually
+# Auto-generated вЂ” do not edit manually
 # Generated: ${new Date().toISOString()}
 
 global
@@ -125,7 +125,7 @@ defaults
       const feName = `sni_frontend_${frontendId}`;
 
       config += `
-# ──── Port ${port} ────
+# в”Ђв”Ђв”Ђв”Ђ Port ${port} в”Ђв”Ђв”Ђв”Ђ
 frontend ${feName}
     bind *:${port}
     mode tcp
@@ -175,7 +175,7 @@ backend ${backendName}
    */
   generateNginxStreamConfig(portGroups: Map<number, PortShareMapping[]>): string {
     let config = `# ProxPanel Nginx Stream SNI Router
-# Auto-generated — do not edit manually
+# Auto-generated вЂ” do not edit manually
 
 stream {
     log_format proxy '$remote_addr [$time_local] '
@@ -189,7 +189,7 @@ stream {
 
     for (const [port, mappings] of portGroups) {
       config += `
-    # ──── Port ${port} ────
+    # в”Ђв”Ђв”Ђв”Ђ Port ${port} в”Ђв”Ђв”Ђв”Ђ
     map $ssl_preread_server_name $backend_${port} {
 `;
 
@@ -260,7 +260,6 @@ stream {
       }
     }
 
-    // Add any port-share inbounds that don't have a parent inbound
     for (const [port, mappings] of portGroups) {
       for (const mapping of mappings) {
         const exists = result.some(

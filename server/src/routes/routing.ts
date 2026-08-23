@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import { z } from 'zod';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
@@ -6,9 +6,7 @@ import { auditLog } from '../middleware/audit';
 
 const router = Router();
 router.use(authenticate);
-
-// ──── Validation Schemas ────
-
+// Validation Schemas
 const createRuleSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
@@ -29,9 +27,6 @@ const createRuleSchema = z.object({
 });
 
 const updateRuleSchema = createRuleSchema.partial();
-
-// ──── GET /api/routing — List all rules ────
-
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -52,9 +47,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── GET /api/routing/:id — Get single rule ────
-
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -71,9 +63,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── POST /api/routing — Create rule ────
-
+// POST /api/routing вЂ” Create rule
 router.post('/', requireAdmin, auditLog('CREATE', 'routing_rule'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -88,9 +78,7 @@ router.post('/', requireAdmin, auditLog('CREATE', 'routing_rule'), async (req: A
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── PUT /api/routing/:id — Update rule ────
-
+// PUT /api/routing/:id вЂ” Update rule
 router.put('/:id', requireAdmin, auditLog('UPDATE', 'routing_rule'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -117,9 +105,6 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'routing_rule'), async (req:
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── DELETE /api/routing/:id — Delete rule ────
-
 router.delete('/:id', requireAdmin, auditLog('DELETE', 'routing_rule'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -141,9 +126,7 @@ router.delete('/:id', requireAdmin, auditLog('DELETE', 'routing_rule'), async (r
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── POST /api/routing/:id/toggle — Toggle enable/disable ────
-
+// POST /api/routing/:id/toggle вЂ” Toggle enable/disable
 router.post('/:id/toggle', requireAdmin, auditLog('UPDATE', 'routing_rule'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -166,9 +149,7 @@ router.post('/:id/toggle', requireAdmin, auditLog('UPDATE', 'routing_rule'), asy
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── POST /api/routing/reorder — Reorder rules ────
-
+// POST /api/routing/reorder вЂ” Reorder rules
 router.post('/reorder', requireAdmin, auditLog('UPDATE', 'routing_rule'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -192,9 +173,6 @@ router.post('/reorder', requireAdmin, auditLog('UPDATE', 'routing_rule'), async 
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── GET /api/routing/presets — Quick-add presets ────
-
 router.get('/presets/list', async (req: AuthRequest, res: Response) => {
   const presets = [
     {

@@ -1,4 +1,4 @@
-import { WebSocket, WebSocketServer } from 'ws';
+﻿import { WebSocket, WebSocketServer } from 'ws';
 import { Server } from 'http';
 import { getPrisma } from '../lib/prisma';
 import { getTrafficBatcher } from '../lib/traffic-batcher';
@@ -101,7 +101,6 @@ export class WorkerSocketManager {
         console.error(`[WS] Socket error from ${node.name}:`, err.message);
       });
 
-      // Update node status to ONLINE
       await prisma.node.update({
         where: { id: node.id },
         data: { status: 'ONLINE', lastCheckAt: new Date() }
@@ -111,7 +110,6 @@ export class WorkerSocketManager {
       await this.pushConfig(node.id);
     });
 
-    // Start heartbeats
     this.heartbeatInterval = setInterval(() => {
       this.connections.forEach((conn, nodeId) => {
         if (conn.isAlive === false) {
@@ -189,7 +187,6 @@ export class WorkerSocketManager {
       const payload = {
         inbounds: inbounds.map(i => ({
           ...i,
-          // Ensure BigInts (if any) are converted or stripped if not needed
         })),
         timestamp: Date.now()
       };

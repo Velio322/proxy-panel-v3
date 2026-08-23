@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import { z } from 'zod';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { AuthRequest, authenticate, requireAdmin } from '../middleware/auth';
@@ -170,9 +170,7 @@ router.post('/:id/toggle', requireAdmin, auditLog('TOGGLE', 'inbound'), async (r
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Port-Sharing (SNI Routing) ────
-
+// Port-Sharing (SNI Routing)
 router.post('/:id/port-share', requireAdmin, auditLog('CREATE', 'portShare'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();

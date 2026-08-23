@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import net from 'net';
 import { z } from 'zod';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
@@ -138,7 +138,6 @@ router.post('/', requireAdmin, auditLog('CREATE', 'node'), async (req: AuthReque
     const data = createNodeSchema.parse(req.body);
 
     let reachable = true;
-    // Check reachability for remote nodes as advisory check
     if (!isLocalHost(data.host)) {
       reachable = await checkReachability(data.host, data.apiPort, 2000);
     }

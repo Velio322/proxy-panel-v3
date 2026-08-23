@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useI18n } from '@/i18n';
 import { useAppStore } from '@/lib/store';
 import { settingsApi } from '@/lib/api';
@@ -37,10 +37,10 @@ const TABS = [
 ];
 
 const LANGUAGES = [
-  { code: 'en', label: 'English',  flag: '🇬🇧' },
-  { code: 'ru', label: 'Русский',  flag: '🇷🇺' },
-  { code: 'zh', label: '中文',      flag: '🇨🇳' },
-  { code: 'fa', label: 'فارسی',    flag: '🇮🇷' },
+  { code: 'en', label: 'English',  flag: 'рџ‡¬рџ‡§' },
+  { code: 'ru', label: 'Р СѓСЃСЃРєРёР№',  flag: 'рџ‡·рџ‡є' },
+  { code: 'zh', label: 'дё­ж–‡',      flag: 'рџ‡Ёрџ‡і' },
+  { code: 'fa', label: 'ЩЃШ§Ш±ШіЫЊ',    flag: 'рџ‡®рџ‡·' },
 ];
 
 export function SettingsPage() {
@@ -141,9 +141,7 @@ export function SettingsPage() {
     </div>
   );
 }
-
-// ── System ──
-
+// System
 function SystemSettings({ settings, update }: { settings: SettingsData; update: (k: string, v: any) => void }) {
   const { t, locale, setLocale } = useI18n();
   return (
@@ -179,9 +177,7 @@ function SystemSettings({ settings, update }: { settings: SettingsData; update: 
     </div>
   );
 }
-
-// ── Appearance ──
-
+// Appearance
 function AppearanceSettings() {
   const { theme, toggleTheme } = useAppStore();
   return (
@@ -222,9 +218,7 @@ function AppearanceSettings() {
     </div>
   );
 }
-
-// ── Telegram ──
-
+// Telegram
 function TelegramSettings({ settings, update }: { settings: SettingsData; update: (k: string, v: any) => void }) {
   const { t } = useI18n();
   const [showToken, setShowToken] = useState(false);
@@ -269,9 +263,7 @@ function TelegramSettings({ settings, update }: { settings: SettingsData; update
     </div>
   );
 }
-
-// ── Backups ──
-
+// Backups
 function BackupSettings({ settings, update }: { settings: SettingsData; update: (k: string, v: any) => void }) {
   const { t } = useI18n();
   const [running, setRunning] = useState(false);
@@ -351,9 +343,7 @@ function BackupSettings({ settings, update }: { settings: SettingsData; update: 
     </div>
   );
 }
-
-// ── Helpers ──
-
+// Helpers
 const labelCls = "block text-[12px] font-medium" as const;
 
 function Section({ title, children }: { title: string; children?: React.ReactNode }) {

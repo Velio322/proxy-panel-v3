@@ -59,10 +59,6 @@ export function MonitoringPage() {
   );
 }
 
-// ══════════════════════════════════════════════
-// Overview Panel
-// ══════════════════════════════════════════════
-
 function OverviewPanel({ period }: { period: string }) {
   const { t } = useI18n();
   const days = parseInt(period);
@@ -180,10 +176,6 @@ function OverviewPanel({ period }: { period: string }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Nodes Panel
-// ══════════════════════════════════════════════
-
 function NodesPanel({ period: _period }: { period: string }) {
   const { t } = useI18n();
   const { data: nodes } = useQuery({
@@ -220,10 +212,6 @@ function NodesPanel({ period: _period }: { period: string }) {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Clients Panel
-// ══════════════════════════════════════════════
 
 function ClientsPanel({ period }: { period: string }) {
   const { t } = useI18n();
@@ -293,10 +281,6 @@ function ClientsPanel({ period }: { period: string }) {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Realtime Panel
-// ══════════════════════════════════════════════
 
 function RealtimePanel() {
   const { t } = useI18n();
@@ -377,10 +361,6 @@ function RealtimePanel() {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Shared Components
-// ══════════════════════════════════════════════
 
 function KPICard({ label, value, sub, icon, color }: {
   label: string; value: string | number; sub?: string; icon: React.ReactNode; color: string;

@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -276,7 +276,6 @@ export const routingApi = {
     api.post('/routing/reorder', data),
   getPresets: () => api.get('/routing/presets/list'),
 };
-
 
 export const settingsApi = {
   getAll: () => api.get<Record<string, any>>('/settings'),

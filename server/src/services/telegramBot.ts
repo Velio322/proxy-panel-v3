@@ -1,4 +1,4 @@
-import { Telegraf, Context } from 'telegraf';
+﻿import { Telegraf, Context } from 'telegraf';
 import { PrismaClient } from '@prisma/client';
 import { config } from '../config';
 import { getPrisma } from '../lib/prisma';
@@ -80,12 +80,12 @@ export class TelegramBotService {
 
       await this.bot.telegram.sendPhoto(telegramId, 
         { source: qrBuffer },
-        { caption: `📱 ${label}\n\n🔗 ${subUrl}`, parse_mode: 'HTML' }
+        { caption: `рџ“± ${label}\n\nрџ”— ${subUrl}`, parse_mode: 'HTML' }
       );
     } catch (error: any) {
       console.error(`[Telegram] Failed to send QR: ${error.message}`);
       // Fallback: send as text
-      await this.sendToUser(telegramId, `📱 ${label}\n\n🔗 ${subUrl}`);
+      await this.sendToUser(telegramId, `рџ“± ${label}\n\nрџ”— ${subUrl}`);
     }
   }
 
@@ -114,15 +114,15 @@ export class TelegramBotService {
 
       let message: string;
       if (hoursLeft < 24) {
-        message = `⚠️ <b>Subscription Expiring Soon!</b>\n\n` +
+        message = `вљ пёЏ <b>Subscription Expiring Soon!</b>\n\n` +
           `Client: ${client.username}\n` +
           `Expires in: ${hoursLeft} hours\n` +
-          `Traffic: ${formatBytes(Number(client.usedTraffic))} / ${client.trafficLimit > 0 ? formatBytes(Number(client.trafficLimit)) : '∞'}`;
+          `Traffic: ${formatBytes(Number(client.usedTraffic))} / ${client.trafficLimit > 0 ? formatBytes(Number(client.trafficLimit)) : 'в€ћ'}`;
       } else {
-        message = `📅 <b>Subscription Reminder</b>\n\n` +
+        message = `рџ“… <b>Subscription Reminder</b>\n\n` +
           `Client: ${client.username}\n` +
           `Expires in: ${daysLeft} days\n` +
-          `Traffic: ${formatBytes(Number(client.usedTraffic))} / ${client.trafficLimit > 0 ? formatBytes(Number(client.trafficLimit)) : '∞'}`;
+          `Traffic: ${formatBytes(Number(client.usedTraffic))} / ${client.trafficLimit > 0 ? formatBytes(Number(client.trafficLimit)) : 'в€ћ'}`;
       }
 
       await this.sendToUser(Number(client.telegramId), message);
@@ -154,8 +154,8 @@ export class TelegramBotService {
     });
 
     // Send alert
-    const nodeList = offlineNodes.map((n) => `• ${n.name} (${n.host})`).join('\n');
-    const message = `🔴 <b>Node Offline Alert</b>\n\n${offlineNodes.length} node(s) are offline:\n${nodeList}\n\nPlease check the nodes immediately.`;
+    const nodeList = offlineNodes.map((n) => `вЂў ${n.name} (${n.host})`).join('\n');
+    const message = `рџ”ґ <b>Node Offline Alert</b>\n\n${offlineNodes.length} node(s) are offline:\n${nodeList}\n\nPlease check the nodes immediately.`;
 
     await this.sendAdminAlert(message);
     console.log(`[Telegram] Alerted about ${offlineNodes.length} offline nodes`);
@@ -186,7 +186,7 @@ export class TelegramBotService {
       if (client.telegramId) {
         await this.sendToUser(
           Number(client.telegramId),
-          `🚫 <b>Traffic Limit Exceeded</b>\n\n` +
+          `рџљ« <b>Traffic Limit Exceeded</b>\n\n` +
           `Client: ${client.username}\n` +
           `Used: ${formatBytes(Number(client.usedTraffic))}\n` +
           `Limit: ${formatBytes(Number(client.trafficLimit))}\n\n` +
@@ -196,7 +196,7 @@ export class TelegramBotService {
 
       // Notify admins
       await this.sendAdminAlert(
-        `🚫 <b>Traffic Limit Exceeded</b>\n\n` +
+        `рџљ« <b>Traffic Limit Exceeded</b>\n\n` +
         `Client: ${client.username}\n` +
         `Used: ${formatBytes(Number(client.usedTraffic))} / ${formatBytes(Number(client.trafficLimit))}\n` +
         `Auto-banned: Yes`
@@ -210,7 +210,7 @@ export class TelegramBotService {
   private registerHandlers(): void {
     if (!this.bot) return;
 
-    // /start — Register account
+    // /start вЂ” Register account
     this.bot.start(async (ctx: Context) => {
       const prisma = getPrisma();
       const telegramId = ctx.from?.id;
@@ -232,20 +232,20 @@ export class TelegramBotService {
       });
 
       await ctx.reply(
-        `👋 Welcome to ProxPanel!\n\n` +
-        `📱 <b>Commands:</b>\n` +
-        `/link &lt;username&gt; — Link panel account\n` +
-        `/status — Check your subscription\n` +
-        `/sub — Get subscription link\n` +
-        `/qr — Get QR code\n` +
-        `/plans — View available plans\n` +
-        `/lang — Change language\n` +
-        `/help — Show this message`,
+        `рџ‘‹ Welcome to ProxPanel!\n\n` +
+        `рџ“± <b>Commands:</b>\n` +
+        `/link &lt;username&gt; вЂ” Link panel account\n` +
+        `/status вЂ” Check your subscription\n` +
+        `/sub вЂ” Get subscription link\n` +
+        `/qr вЂ” Get QR code\n` +
+        `/plans вЂ” View available plans\n` +
+        `/lang вЂ” Change language\n` +
+        `/help вЂ” Show this message`,
         { parse_mode: 'HTML' }
       );
     });
 
-    // /link — Link Telegram to panel account
+    // /link вЂ” Link Telegram to panel account
     this.bot.command('link', async (ctx: Context) => {
       const args = ctx.message && 'text' in ctx.message ? ctx.message.text.split(' ') : [];
       if (args.length < 2) {
@@ -259,16 +259,15 @@ export class TelegramBotService {
 
       const client = await prisma.client.findFirst({ where: { username } });
       if (!client) {
-        await ctx.reply('❌ Client not found. Check your username.');
+        await ctx.reply('вќЊ Client not found. Check your username.');
         return;
       }
 
-      // Check if this Telegram ID is already linked to another account
       const existing = await prisma.client.findFirst({
         where: { telegramId: BigInt(telegramId!), id: { not: client.id } },
       });
       if (existing) {
-        await ctx.reply(`❌ This Telegram account is already linked to <b>${existing.username}</b>.`, { parse_mode: 'HTML' });
+        await ctx.reply(`вќЊ This Telegram account is already linked to <b>${existing.username}</b>.`, { parse_mode: 'HTML' });
         return;
       }
 
@@ -277,10 +276,10 @@ export class TelegramBotService {
         data: { telegramId: BigInt(telegramId!) },
       });
 
-      await ctx.reply(`✅ Linked to <b>${client.username}</b>!`, { parse_mode: 'HTML' });
+      await ctx.reply(`вњ… Linked to <b>${client.username}</b>!`, { parse_mode: 'HTML' });
     });
 
-    // /status — Check subscription
+    // /status вЂ” Check subscription
     this.bot.command('status', async (ctx: Context) => {
       const prisma = getPrisma();
       const telegramId = ctx.from?.id;
@@ -298,20 +297,20 @@ export class TelegramBotService {
       const isExpired = client.expireAt && client.expireAt < now;
       const isNearLimit = client.trafficLimit > 0 && Number(client.usedTraffic) > Number(client.trafficLimit) * 0.9;
 
-      const statusEmoji = client.banned ? '🔴' : isExpired ? '🟡' : isNearLimit ? '🟠' : '🟢';
+      const statusEmoji = client.banned ? 'рџ”ґ' : isExpired ? 'рџџЎ' : isNearLimit ? 'рџџ ' : 'рџџў';
 
       await ctx.reply(
         `${statusEmoji} <b>Subscription Status</b>\n\n` +
-        `👤 <b>Username:</b> ${client.username}\n` +
-        `📊 <b>Traffic:</b> ${formatBytes(Number(client.usedTraffic))} / ${client.trafficLimit > 0 ? formatBytes(Number(client.trafficLimit)) : '∞'}\n` +
-        `📅 <b>Expires:</b> ${client.expireAt ? client.expireAt.toLocaleDateString() : 'Never'}\n` +
-        `🔓 <b>Status:</b> ${client.banned ? 'Banned' : 'Active'}\n` +
-        `📡 <b>Last Active:</b> ${client.lastActiveAt ? client.lastActiveAt.toLocaleString() : 'Never'}`,
+        `рџ‘¤ <b>Username:</b> ${client.username}\n` +
+        `рџ“Љ <b>Traffic:</b> ${formatBytes(Number(client.usedTraffic))} / ${client.trafficLimit > 0 ? formatBytes(Number(client.trafficLimit)) : 'в€ћ'}\n` +
+        `рџ“… <b>Expires:</b> ${client.expireAt ? client.expireAt.toLocaleDateString() : 'Never'}\n` +
+        `рџ”“ <b>Status:</b> ${client.banned ? 'Banned' : 'Active'}\n` +
+        `рџ“Ў <b>Last Active:</b> ${client.lastActiveAt ? client.lastActiveAt.toLocaleString() : 'Never'}`,
         { parse_mode: 'HTML' }
       );
     });
 
-    // /sub — Get subscription link
+    // /sub вЂ” Get subscription link
     this.bot.command('sub', async (ctx: Context) => {
       const prisma = getPrisma();
       const telegramId = ctx.from?.id;
@@ -329,15 +328,15 @@ export class TelegramBotService {
       const subUrlClash = `${config.master.apiUrl}/api/v1/client/${client.subToken}/sub?flag=clash`;
 
       await ctx.reply(
-        `📱 <b>Your Subscription</b>\n\n` +
-        `🔗 <b>Base64:</b>\n<code>${subUrl}</code>\n\n` +
-        `🔗 <b>Clash:</b>\n<code>${subUrlClash}</code>\n\n` +
-        `📋 Copy the link and paste it into your client app.`,
+        `рџ“± <b>Your Subscription</b>\n\n` +
+        `рџ”— <b>Base64:</b>\n<code>${subUrl}</code>\n\n` +
+        `рџ”— <b>Clash:</b>\n<code>${subUrlClash}</code>\n\n` +
+        `рџ“‹ Copy the link and paste it into your client app.`,
         { parse_mode: 'HTML' }
       );
     });
 
-    // /qr — Get QR code
+    // /qr вЂ” Get QR code
     this.bot.command('qr', async (ctx: Context) => {
       const prisma = getPrisma();
       const telegramId = ctx.from?.id;
@@ -355,7 +354,7 @@ export class TelegramBotService {
       await this.sendSubscriptionQR(Number(telegramId!), subUrl, `${client.username} subscription`);
     });
 
-    // /lang — Change language
+    // /lang вЂ” Change language
     this.bot.command('lang', async (ctx: Context) => {
       const args = ctx.message && 'text' in ctx.message ? ctx.message.text.split(' ') : [];
       if (args.length < 2) {
@@ -375,31 +374,29 @@ export class TelegramBotService {
         data: { language: lang },
       });
 
-      const langNames: Record<string, string> = { en: 'English', ru: 'Русский', zh: '中文', fa: 'فارسی' };
-      await ctx.reply(`✅ Language set to ${langNames[lang]}`);
+      const langNames: Record<string, string> = { en: 'English', ru: 'Р СѓСЃСЃРєРёР№', zh: 'дё­ж–‡', fa: 'ЩЃШ§Ш±ШіЫЊ' };
+      await ctx.reply(`вњ… Language set to ${langNames[lang]}`);
     });
 
     // /help
     this.bot.command('help', async (ctx: Context) => {
       await ctx.reply(
-        `📖 <b>ProxPanel Bot Help</b>\n\n` +
-        `/start — Register with the bot\n` +
-        `/link &lt;username&gt; — Link panel account\n` +
-        `/status — Check subscription status\n` +
-        `/sub — Get subscription link\n` +
-        `/qr — Get QR code for subscription\n` +
-        `/plans — View available plans\n` +
-        `/lang &lt;code&gt; — Change language (en/ru/zh/fa)\n` +
-        `/help — Show this message\n\n` +
+        `рџ“– <b>ProxPanel Bot Help</b>\n\n` +
+        `/start вЂ” Register with the bot\n` +
+        `/link &lt;username&gt; вЂ” Link panel account\n` +
+        `/status вЂ” Check subscription status\n` +
+        `/sub вЂ” Get subscription link\n` +
+        `/qr вЂ” Get QR code for subscription\n` +
+        `/plans вЂ” View available plans\n` +
+        `/lang &lt;code&gt; вЂ” Change language (en/ru/zh/fa)\n` +
+        `/help вЂ” Show this message\n\n` +
         `For support, contact your administrator.`,
         { parse_mode: 'HTML' }
       );
     });
   }
 }
-
-// ──── Helpers ────
-
+// Helpers
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;

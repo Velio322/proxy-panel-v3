@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+﻿import { ChildProcess, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -121,8 +121,7 @@ export class SingboxManager {
         },
       };
     }
-
-    // ── NaiveProxy — sing-box-extended "naive" inbound ──
+// NaiveProxy вЂ” sing-box-extended "naive" inbound
     // Requires sing-box compiled with with_naive_outbound tag (extended build)
     if (inbound.protocol === 'NAIVEPROXY') {
       const users: Array<{ username: string; password: string }> = [];
@@ -169,8 +168,7 @@ export class SingboxManager {
 
       return result;
     }
-
-    // ── Mieru — sing-box-extended "mieru" inbound ──
+// Mieru вЂ” sing-box-extended "mieru" inbound
     // Requires sing-box-extended build (1.x.x-extended-y.z.w)
     // Mieru uses its own protocol over TCP/UDP
     if (inbound.protocol === 'MIERU') {

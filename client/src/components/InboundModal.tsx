@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+﻿import { useState, useCallback } from 'react';
 import { X, Loader2, ChevronLeft, ChevronRight, KeyRound, Sparkles } from 'lucide-react';
 import { Inbound } from '@/lib/api';
 
@@ -230,8 +230,7 @@ export function InboundModal({ inbound, nodes, onClose, onSave }: InboundModalPr
     </div>
   );
 }
-
-// ── Tab: General ──
+// Tab: General
 function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void; nodes: any[] }) {
   return (
     <div className="space-y-6">
@@ -248,7 +247,7 @@ function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: ke
             <option value="">-- Choose target node --</option>
             {nodes.map((n) => (
               <option key={n.id} value={n.id}>
-                {n.name} ({n.host}) — [{n.status}]
+                {n.name} ({n.host}) вЂ” [{n.status}]
               </option>
             ))}
           </select>
@@ -507,8 +506,7 @@ function TabGeneral({ form, update, nodes }: { form: InboundForm; update: (k: ke
     </div>
   );
 }
-
-// ── Tab: Transport ──
+// Tab: Transport
 function TabTransport({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
   if (!['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(form.protocol)) {
     return (
@@ -612,8 +610,7 @@ function TabTransport({ form, update }: { form: InboundForm; update: (k: keyof I
     </div>
   );
 }
-
-// ── Tab: Security ──
+// Tab: Security
 function TabSecurity({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
   const generateRealityKeys = () => {
     const pk = Array.from(crypto.getRandomValues(new Uint8Array(32)))
@@ -749,8 +746,7 @@ function TabSecurity({ form, update }: { form: InboundForm; update: (k: keyof In
     </div>
   );
 }
-
-// ── Tab: Sniffing ──
+// Tab: Sniffing
 function TabSniffing({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
   const toggleDest = (d: string) => {
     const current = form.sniffingDestOverride || [];
@@ -803,8 +799,7 @@ function TabSniffing({ form, update }: { form: InboundForm; update: (k: keyof In
     </div>
   );
 }
-
-// ── Tab: Advanced JSON ──
+// Tab: Advanced JSON
 function TabAdvancedJSON({ form }: { form: InboundForm }) {
   const jsonStr = JSON.stringify(form, null, 2);
   return (
@@ -818,8 +813,7 @@ function TabAdvancedJSON({ form }: { form: InboundForm }) {
     </div>
   );
 }
-
-// ── Tab: Port Sharing ──
+// Tab: Port Sharing
 function TabPortShare({ form, update }: { form: InboundForm; update: (k: keyof InboundForm, v: any) => void }) {
   const addShare = () => {
     update('portShares', [

@@ -1,11 +1,10 @@
-import cron from 'node-cron';
+﻿import cron from 'node-cron';
 import { getPrisma } from '../lib/prisma';
 import { NodeService } from './nodeService';
 
 const nodeService = new NodeService();
 
 export function startScheduler() {
-  // Check node health every 2 minutes
   cron.schedule('*/2 * * * *', async () => {
     try {
       await nodeService.getAllNodeStatuses();
@@ -14,7 +13,6 @@ export function startScheduler() {
     }
   });
 
-  // Check expired clients every hour
   cron.schedule('0 * * * *', async () => {
     try {
       const prisma = getPrisma();

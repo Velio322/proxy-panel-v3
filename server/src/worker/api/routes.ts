@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+﻿import { Router, Request, Response, NextFunction } from 'express';
 import { ProcessManager } from '../process-manager';
 import { config } from '../../config';
 
@@ -17,15 +17,11 @@ export function createWorkerAPI(pm: ProcessManager): Router {
 
     return res.status(401).json({ error: 'Unauthorized' });
   });
-
-  // ──── Status ────
-
+// Status
   router.get('/api/status', (_req, res) => {
     res.json(pm.getStatus());
   });
-
-  // ──── Config Management ────
-
+// Config Management
   router.post('/api/config', (req, res) => {
     try {
       const { inbounds } = req.body;
@@ -53,15 +49,11 @@ export function createWorkerAPI(pm: ProcessManager): Router {
     pm.stopAll();
     res.json({ success: true });
   });
-
-  // ──── Traffic Stats ────
-
+// Traffic Stats
   router.get('/api/traffic', (_req, res) => {
     res.json(pm.getTrafficStats());
   });
-
-  // ──── Metrics (for Prometheus) ────
-
+// Metrics (for Prometheus)
   router.get('/api/metrics', (_req, res) => {
     const status = pm.getStatus();
     const traffic = pm.getTrafficStats();
@@ -79,9 +71,7 @@ export function createWorkerAPI(pm: ProcessManager): Router {
       traffic: { total: { upload: totalUpload, download: totalDownload }, perUser: traffic },
     });
   });
-
-  // ──── Inbounds ────
-
+// Inbounds
   router.get('/api/inbounds', (_req, res) => {
     try {
       const fs = require('fs');

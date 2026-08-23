@@ -1,8 +1,8 @@
-/**
- * openWrtConfigBuilder.ts — Generates uci commands and subscription configs
+﻿/**
+ * openWrtConfigBuilder.ts вЂ” Generates uci commands and subscription configs
  * for OpenWrt routers (OpenClash, Passwall, Passwall2, ShadowsocksR).
  *
- * Converts Panel InboundConfig → OpenWrt uci commands / config files.
+ * Converts Panel InboundConfig в†’ OpenWrt uci commands / config files.
  */
 
 interface InboundExport {
@@ -55,10 +55,8 @@ export class OpenWrtConfigBuilder {
 
     const commands: UciCommand[] = [];
 
-    // Delete existing section
     commands.push({ type: 'delete', path: `openclash.${section}` });
 
-    // Create section
     commands.push({ type: 'add', path: 'openclash', value: 'proxy' });
 
     switch (inbound.protocol) {
@@ -190,7 +188,7 @@ export class OpenWrtConfigBuilder {
    * Generate full OpenClash config.yaml content.
    */
   generateOpenClashYaml(inbounds: InboundExport[]): string {
-    let yaml = `# ProxPanel → OpenClash Config
+    let yaml = `# ProxPanel в†’ OpenClash Config
 # Generated: ${new Date().toISOString()}
 # Compatible with: OpenClash / Clash Meta (mihomo)
 
@@ -297,9 +295,7 @@ rules:
 
     return Buffer.from(lines.join('\n')).toString('base64');
   }
-
-  // ──── Converters ────
-
+// Converters
   private toOpenClashProxy(inbound: InboundExport): OpenClashNode | null {
     const s = inbound.settings;
     const st = inbound.stream || {};

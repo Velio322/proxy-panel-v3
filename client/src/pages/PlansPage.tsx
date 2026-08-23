@@ -103,10 +103,6 @@ export function PlansPage() {
   );
 }
 
-// ══════════════════════════════════════════════
-// Plan Card
-// ══════════════════════════════════════════════
-
 function PlanCard({ plan, onEdit, onToggle, onDelete }: {
   plan: Plan; onEdit: () => void; onToggle: () => void; onDelete: () => void;
 }) {
@@ -206,10 +202,6 @@ function PlanCard({ plan, onEdit, onToggle, onDelete }: {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Plan Modal (Create/Edit)
-// ══════════════════════════════════════════════
 
 function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
   const { t } = useI18n();
@@ -318,10 +310,6 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
     </Modal>
   );
 }
-
-// ══════════════════════════════════════════════
-// Shared Components
-// ══════════════════════════════════════════════
 
 const inputCls = "w-full px-2.5 py-1.5 rounded-lg bg-bg-raised border border-border text-fg text-xs focus:outline-none focus:border-[hsl(var(--accent))] focus:ring-1 focus:ring-[hsl(var(--accent/0.15))]";
 const labelCls = "block text-[11px] font-medium text-fg-subtle mb-1";

@@ -119,10 +119,6 @@ function TagArrayField({ label, value, onChange, placeholder }: {
   );
 }
 
-// ══════════════════════════════════════════════
-// Main Component
-// ══════════════════════════════════════════════
-
 export function RoutingPage() {
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -378,10 +374,6 @@ export function RoutingPage() {
   );
 }
 
-// ══════════════════════════════════════════════
-// Create Rule Modal
-// ══════════════════════════════════════════════
-
 function CreateRuleModal({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -489,10 +481,6 @@ function CreateRuleModal({ onClose }: { onClose: () => void }) {
     </Modal>
   );
 }
-
-// ══════════════════════════════════════════════
-// Edit Rule Modal
-// ══════════════════════════════════════════════
 
 function EditRuleModal({ rule, onClose }: { rule: RoutingRule; onClose: () => void }) {
   const { t } = useI18n();
@@ -602,10 +590,6 @@ function EditRuleModal({ rule, onClose }: { rule: RoutingRule; onClose: () => vo
     </Modal>
   );
 }
-
-// ══════════════════════════════════════════════
-// Empty State
-// ══════════════════════════════════════════════
 
 function EmptyRouting({ onAdd }: { onAdd: () => void }) {
   const { t } = useI18n();

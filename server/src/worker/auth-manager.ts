@@ -1,8 +1,8 @@
-import crypto from 'crypto';
+﻿import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 
 /**
- * AuthManager — handles authentication for Master-Worker communication.
+ * AuthManager вЂ” handles authentication for Master-Worker communication.
  * Supports: Token-based auth (primary), IP whitelisting, request signing.
  */
 export class AuthManager {
@@ -21,13 +21,11 @@ export class AuthManager {
    * Checks: token, IP whitelist, timestamp freshness.
    */
   validateRequest(req: Request): { valid: boolean; error?: string } {
-    // Check token
     const token = req.headers['x-node-secret'] as string || req.headers.authorization?.replace('Bearer ', '');
     if (!token || !this.verifyToken(token)) {
       return { valid: false, error: 'Invalid or missing token' };
     }
 
-    // Check IP whitelist (if configured)
     if (this.ipWhitelist.size > 0) {
       const clientIp = req.ip || req.socket.remoteAddress || '';
       const normalizedIp = clientIp.replace(/^::ffff:/, '');
@@ -36,7 +34,6 @@ export class AuthManager {
       }
     }
 
-    // Check timestamp freshness (prevent replay attacks)
     const timestamp = req.headers['x-timestamp'] as string;
     if (timestamp) {
       const reqTime = parseInt(timestamp);
@@ -50,7 +47,7 @@ export class AuthManager {
   }
 
   /**
-   * Generate a signed token for Master→Worker communication.
+   * Generate a signed token for Masterв†’Worker communication.
    */
   generateToken(nodeId: string, expiresAt?: number): string {
     const payload = {
@@ -73,7 +70,6 @@ export class AuthManager {
     try {
       const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
 
-      // Check expiry
       if (decoded.exp && decoded.exp < Date.now()) {
         return false;
       }

@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import http from 'http';
 import https from 'https';
 import os from 'os';
@@ -62,13 +62,12 @@ async function registerNode(masterUrl: string, nodeSecret: string): Promise<void
 
 async function main() {
   console.log(`
-  ╔══════════════════════════════════════════╗
-  ║     ProxPanel Worker v${WORKER_VERSION}              ║
-  ║     Multi-protocol Proxy Daemon         ║
-  ╚══════════════════════════════════════════╝
+  в•”в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•—
+  в•‘     ProxPanel Worker v${WORKER_VERSION}              в•‘
+  в•‘     Multi-protocol Proxy Daemon         в•‘
+  в•љв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ќ
   `);
 
-  // Initialize process manager
   const pm = new ProcessManager({
     configDir: config.worker.configDir,
     binDir: path.dirname(config.worker.xrayBin),
@@ -79,7 +78,6 @@ async function main() {
     haproxyEnabled: true,
   });
 
-  // Start Express API server
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
@@ -135,7 +133,7 @@ async function main() {
     // Initial status report
     masterClient.reportStatus(pm.getStatus());
   } else {
-    console.log('[Worker] No MASTER_URL configured — running in standalone mode');
+    console.log('[Worker] No MASTER_URL configured вЂ” running in standalone mode');
     console.log('[Worker] Use POST /api/config to push configs manually');
   }
 
@@ -151,7 +149,6 @@ async function main() {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  // Handle uncaught errors
   process.on('uncaughtException', (error) => {
     console.error('[Worker] Uncaught exception:', error);
   });

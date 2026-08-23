@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,9 +10,7 @@ import { cacheInvalidatePattern } from '../lib/redis';
 
 const router = Router();
 router.use(authenticate);
-
-// ──── Validation Schemas ────
-
+// Validation Schemas
 const createUserSchema = z.object({
   username: z.string().min(3).max(50).regex(/^[a-zA-Z0-9_-]+$/, 'Only letters, numbers, - and _'),
   email: z.string().email().optional(),
@@ -38,9 +36,7 @@ const createResellerUserSchema = z.object({
   password: z.string().min(8).optional(),
   language: z.enum(['en', 'ru', 'zh', 'fa']).optional(),
 });
-
-// ──── Helpers ────
-
+// Helpers
 function generatePassword(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   let pass = '';
@@ -59,9 +55,7 @@ function canManageRole(actorRole: string, targetRole: string): boolean {
   };
   return (hierarchy[actorRole] || 0) > (hierarchy[targetRole] || 0);
 }
-
-// ──── Routes ────
-
+// Routes
 router.get('/', requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -129,9 +123,6 @@ router.get('/:id', requireAdmin, async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Create User ────
-
 router.post('/', requireAdmin, auditLog('CREATE', 'user'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -204,9 +195,6 @@ router.post('/', requireAdmin, auditLog('CREATE', 'user'), async (req: AuthReque
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Create Reseller + User in one shot ────
-
 router.post('/create-reseller', requireSuperAdmin, auditLog('CREATE', 'reseller+user'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -222,7 +210,6 @@ router.post('/create-reseller', requireSuperAdmin, auditLog('CREATE', 'reseller+
 
     const userParsed = createResellerUserSchema.parse(userData);
 
-    // Create reseller
     const newReseller = await prisma.reseller.create({
       data: {
         name: resellerData.name,
@@ -233,7 +220,6 @@ router.post('/create-reseller', requireSuperAdmin, auditLog('CREATE', 'reseller+
       },
     });
 
-    // Create reseller user
     const plainPassword = userParsed.password || generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 12);
 
@@ -263,9 +249,6 @@ router.post('/create-reseller', requireSuperAdmin, auditLog('CREATE', 'reseller+
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Update User ────
-
 router.put('/:id', requireAdmin, auditLog('UPDATE', 'user'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -311,9 +294,6 @@ router.put('/:id', requireAdmin, auditLog('UPDATE', 'user'), async (req: AuthReq
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Delete User ────
-
 router.delete('/:id', requireAdmin, auditLog('DELETE', 'user'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -330,7 +310,6 @@ router.delete('/:id', requireAdmin, auditLog('DELETE', 'user'), async (req: Auth
       return res.status(403).json({ error: 'Cannot delete SUPER_ADMIN' });
     }
 
-    // Delete related sessions and API keys
     await prisma.userSession.deleteMany({ where: { userId: req.params.id } });
     await prisma.apiKey.deleteMany({ where: { userId: req.params.id } });
     await prisma.user.delete({ where: { id: req.params.id } });
@@ -340,9 +319,7 @@ router.delete('/:id', requireAdmin, auditLog('DELETE', 'user'), async (req: Auth
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Reset Password ────
-
+// Reset Password
 router.post('/:id/reset-password', requireAdmin, auditLog('RESET_PASSWORD', 'user'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -367,9 +344,7 @@ router.post('/:id/reset-password', requireAdmin, auditLog('RESET_PASSWORD', 'use
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── Toggle Ban ────
-
+// Toggle Ban
 router.post('/:id/toggle-ban', requireAdmin, auditLog('TOGGLE_BAN', 'user'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -400,9 +375,7 @@ router.post('/:id/toggle-ban', requireAdmin, auditLog('TOGGLE_BAN', 'user'), asy
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──── API Keys ────
-
+// API Keys
 router.get('/:id/api-keys', requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const prisma = getPrisma();

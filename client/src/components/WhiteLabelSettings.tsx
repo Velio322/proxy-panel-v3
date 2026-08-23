@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Upload, Eye, EyeOff, Palette, Image, Type, AlignLeft, Check } from 'lucide-react';
 
 interface WhiteLabelSettingsProps {
@@ -271,9 +271,7 @@ export function WhiteLabelSettings({ settings, update }: WhiteLabelSettingsProps
     </div>
   );
 }
-
-// ── Sub-components ──
-
+// Sub-components
 function WLSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-3">

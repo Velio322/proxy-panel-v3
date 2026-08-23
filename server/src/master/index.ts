@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
@@ -113,7 +113,7 @@ if (config.prometheus.enabled) {
   });
 }
 
-// Serve frontend static files (only if client/dist exists — in Docker it's a separate container)
+// Serve frontend static files (only if client/dist exists вЂ” in Docker it's a separate container)
 const clientDist = path.resolve(__dirname, '../../../client/dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
@@ -145,7 +145,7 @@ app.get('*', (req, res) => {
 });
 
 async function startServer() {
-  // Retry DB connection — entrypoint may still be running db push
+  // Retry DB connection вЂ” entrypoint may still be running db push
   const MAX_RETRIES = 15;
   let retries = 0;
   while (retries < MAX_RETRIES) {
@@ -172,11 +172,9 @@ async function startServer() {
     initTelegramBot();
     startScheduler();
 
-    // Initialize Worker WebSocket Manager
     const wsManager = getWorkerSocketManager();
     wsManager.init(server);
 
-    // Start traffic batcher (accumulates writes, flushes to DB periodically)
     const batcher = getTrafficBatcher();
     batcher.start();
     batcher.on('flushed', ({ count }) => console.log(`[Batcher] Flushed ${count} traffic entries`));

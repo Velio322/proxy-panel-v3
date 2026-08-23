@@ -1,10 +1,10 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { InboundConfig, RoutingRule, XrayConfig, SingboxConfig } from './types';
 
 /**
- * ConfigHydrator — translates DB InboundConfig objects into valid core config.json files.
+ * ConfigHydrator вЂ” translates DB InboundConfig objects into valid core config.json files.
  * Handles: Xray v1.8+ full config, sing-box, NaiveProxy, Mieru.
  */
 export class ConfigHydrator {
@@ -14,15 +14,12 @@ export class ConfigHydrator {
     this.configDir = configDir;
     fs.mkdirSync(configDir, { recursive: true });
   }
-
-  // ──── Xray Config Generation ────
-
+// Xray Config Generation
   generateXrayConfig(inbounds: InboundConfig[], routing?: RoutingRule[]): XrayConfig {
     const xrayInbounds = inbounds
       .filter((i) => ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(i.protocol))
       .map((i) => this.buildXrayInbound(i));
 
-    // Add Xray stats API inbound
     xrayInbounds.push({
       tag: 'api',
       listen: '127.0.0.1',
@@ -290,9 +287,7 @@ export class ConfigHydrator {
         break;
     }
   }
-
-  // ──── Sing-box Config Generation ────
-
+// Sing-box Config Generation
   generateSingboxConfig(inbounds: InboundConfig[]): SingboxConfig {
     const singboxInbounds = inbounds
       .filter((i) => ['HYSTERIA2', 'TUIC'].includes(i.protocol))
@@ -384,9 +379,7 @@ export class ConfigHydrator {
 
     return null;
   }
-
-  // ──── Mieru Config Generation ────
-
+// Mieru Config Generation
   generateMieruConfig(inbounds: InboundConfig[]): any[] {
     return inbounds
       .filter((i) => i.protocol === 'MIERU')
@@ -405,9 +398,7 @@ export class ConfigHydrator {
         };
       });
   }
-
-  // ──── NaiveProxy Config Generation ────
-
+// NaiveProxy Config Generation
   generateNaiveProxyConfig(inbounds: InboundConfig[]): any[] {
     return inbounds
       .filter((i) => i.protocol === 'NAIVEPROXY')
@@ -426,9 +417,7 @@ export class ConfigHydrator {
         };
       });
   }
-
-  // ──── File I/O ────
-
+// File I/O
   writeXrayConfig(config: XrayConfig): string {
     const logDir = path.join(this.configDir, 'logs');
     fs.mkdirSync(logDir, { recursive: true });

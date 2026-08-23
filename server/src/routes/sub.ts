@@ -1,12 +1,9 @@
-import { Router, Request, Response } from 'express';
+﻿import { Router, Request, Response } from 'express';
 import { getPrisma, serializeBigInt } from '../lib/prisma';
 import { cacheGet, cacheSet, cacheInvalidatePattern } from '../lib/redis';
 
 const router = Router();
-
-// ──────────────────────────────────────────────
 // User-Agent format auto-detection
-// ──────────────────────────────────────────────
 function detectFormat(userAgent: string, explicitFlag?: string): string {
   if (explicitFlag) return explicitFlag.toLowerCase();
   const ua = (userAgent || '').toLowerCase();
@@ -22,12 +19,7 @@ function detectFormat(userAgent: string, explicitFlag?: string): string {
   }
   return 'base64';
 }
-
-// ──────────────────────────────────────────────
-// Subscription endpoint (public — auth via subToken)
-// GET /api/v1/client/:subToken/sub
-// ──────────────────────────────────────────────
-
+// Subscription endpoint (public вЂ” auth via subToken)
 router.get('/:subToken/sub', async (req: Request, res: Response) => {
   try {
     const subToken = req.params.subToken as string;
@@ -59,7 +51,6 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
       return res.status(403).send('Traffic limit exceeded');
     }
 
-    // Check cache for generated output
     const cacheKey = `sub:${subToken}:${format}`;
     const cached = await cacheGet<string>(cacheKey);
     if (cached) {
@@ -67,10 +58,8 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
       return res.send(cached);
     }
 
-    // Get allowed protocols
     const allowedProtocols = (client.protocols as string[]) || ['VLESS', 'HYSTERIA2', 'TROJAN', 'SHADOWSOCKS', 'NAIVEPROXY', 'MIERU'];
 
-    // Get all enabled inbounds matching client's protocols from ONLINE nodes
     const inbounds = await prisma.inbound.findMany({
       where: {
         enable: true,
@@ -91,7 +80,6 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
       return res.status(503).send('No online nodes available');
     }
 
-    // Build subscription entries
     const entries: SubscriptionEntry[] = [];
 
     for (const inbound of inbounds) {
@@ -148,7 +136,6 @@ router.get('/:subToken/sub', async (req: Request, res: Response) => {
     // Cache for 5 minutes
     await cacheSet(cacheKey, output, 300);
 
-    // Update last active
     await prisma.client.update({
       where: { id: client.id },
       data: { lastActiveAt: new Date() },
@@ -181,12 +168,7 @@ function setSubscriptionHeaders(res: Response, client: any, format: string) {
   res.set('Subscription-Userinfo', `upload=${upload}; download=${download}; total=${total}; expire=${expire}`);
   res.set('Content-Disposition', `attachment; filename="${client.username}"`);
 }
-
-// ──────────────────────────────────────────────
 // Client info via sub token
-// GET /api/v1/client/:subToken/info
-// ──────────────────────────────────────────────
-
 router.get('/:subToken/info', async (req: Request, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -217,12 +199,8 @@ router.get('/:subToken/info', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──────────────────────────────────────────────
 // Regenerate sub token
 // POST /api/v1/client/:subToken/regenerate
-// ──────────────────────────────────────────────
-
 router.post('/:subToken/regenerate', async (req: Request, res: Response) => {
   try {
     const prisma = getPrisma();
@@ -248,11 +226,7 @@ router.post('/:subToken/regenerate', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// ──────────────────────────────────────────────
 // Subscription entry types
-// ──────────────────────────────────────────────
-
 interface SubscriptionEntry {
   protocol: string;
   tag: string;
@@ -262,11 +236,6 @@ interface SubscriptionEntry {
   inbound: any;
   client: any;
 }
-
-// ──────────────────────────────────────────────
-// Build subscription entry from inbound
-// ──────────────────────────────────────────────
-
 function buildSubscriptionEntry(inbound: any, client: any): SubscriptionEntry | null {
   const settings = (inbound.settings as Record<string, any>) || {};
   const stream = (inbound.stream as Record<string, any>) || {};
@@ -374,11 +343,7 @@ function buildPortShareEntry(inbound: any, ps: any, client: any): SubscriptionEn
     client,
   };
 }
-
-// ──────────────────────────────────────────────
 // URI Generators
-// ──────────────────────────────────────────────
-
 function buildVlessUri(uuid: string, host: string, port: number, stream: any, tag: string): string {
   const params = new URLSearchParams();
   const network = stream.network || 'tcp';
@@ -523,17 +488,12 @@ function buildTuicUri(uuid: string, pass: string, host: string, port: number, se
   if (settings.alpn) params.set('alpn', 'h3');
   return `tuic://${uuid}:${pass}@${host}:${port}?${params.toString()}#${encodeURIComponent(tag)}`;
 }
-
-// ──────────────────────────────────────────────
 // Formatters
-// ──────────────────────────────────────────────
-
 function generateBase64(entries: SubscriptionEntry[]): string {
   const lines = entries.map((e) => e.raw).filter(Boolean);
   return Buffer.from(lines.join('\n')).toString('base64');
 }
-
-// ── Clash / Mihomo YAML Generator ──
+// Clash / Mihomo YAML Generator
 function generateClashYaml(entries: SubscriptionEntry[], username: string): string {
   const proxies: any[] = [];
 
@@ -750,8 +710,7 @@ function generateClashYaml(entries: SubscriptionEntry[], username: string): stri
 
   return yaml;
 }
-
-// ── Sing-box JSON Generator (v1.9+) ──
+// Sing-box JSON Generator (v1.9+)
 function generateSingboxJson(entries: SubscriptionEntry[], username: string): string {
   const outbounds: any[] = [];
   const proxyTags: string[] = [];
@@ -929,8 +888,7 @@ function generateSingboxJson(entries: SubscriptionEntry[], username: string): st
 
   return JSON.stringify(singboxConfig, null, 2);
 }
-
-// ── Xray Full Client Config Generator ──
+// Xray Full Client Config Generator
 function generateXrayClientJson(entries: SubscriptionEntry[], client: any): string {
   const xrayOutbounds: any[] = [];
 
@@ -1033,11 +991,7 @@ function generateXrayClientJson(entries: SubscriptionEntry[], client: any): stri
 
   return JSON.stringify(clientConfig, null, 2);
 }
-
-// ──────────────────────────────────────────────
 // URI parsing helpers
-// ──────────────────────────────────────────────
-
 function extractParams(uri: string): Record<string, string> {
   const params: Record<string, string> = {};
   const qIdx = uri.indexOf('?');

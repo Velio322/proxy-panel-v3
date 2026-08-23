@@ -1,4 +1,4 @@
-import { InboundConfig } from './types';
+﻿import { InboundConfig } from './types';
 import WebSocket from 'ws';
 
 interface MasterClientConfig {
@@ -44,7 +44,6 @@ export class MasterClient {
       this.ws = null;
     }
 
-    // Convert http/https to ws/wss
     const wsUrl = this.config.masterUrl.replace(/^http/, 'ws') + '/ws/worker';
 
     console.log(`[MasterClient] Connecting to Master WebSocket: ${wsUrl}`);
@@ -72,7 +71,6 @@ export class MasterClient {
       // Request initial config
       this.sendEvent('config_request', {});
 
-      // Start periodic status report (e.g. every 30s)
       if (this.statusTimer) clearInterval(this.statusTimer);
       this.statusTimer = setInterval(() => {
         this.config.onStatusReport({});

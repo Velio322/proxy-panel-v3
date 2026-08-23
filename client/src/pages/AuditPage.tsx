@@ -11,10 +11,6 @@ import {
   Activity, Ban, RotateCcw, ArrowUpDown, Clock
 } from 'lucide-react';
 
-// ══════════════════════════════════════════════
-// Constants
-// ══════════════════════════════════════════════
-
 const ACTION_CONFIG: Record<string, { icon: any; color: string; bg: string; labelKey: string }> = {
   CREATE: { icon: Plus, color: 'text-blue-400', bg: 'bg-blue-500/10', labelKey: 'audit.created' },
   UPDATE: { icon: Edit3, color: 'text-amber-400', bg: 'bg-amber-500/10', labelKey: 'audit.updated' },
@@ -218,10 +214,6 @@ export function AuditPage() {
   );
 }
 
-// ══════════════════════════════════════════════
-// Table Row
-// ══════════════════════════════════════════════
-
 function LogRow({ log, expanded, onToggle }: { log: AuditLog; expanded: boolean; onToggle: () => void }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -325,10 +317,6 @@ function LogRow({ log, expanded, onToggle }: { log: AuditLog; expanded: boolean;
   );
 }
 
-// ══════════════════════════════════════════════
-// Timeline Entry
-// ══════════════════════════════════════════════
-
 function TimelineEntry({ log, expanded, onToggle }: { log: AuditLog; expanded: boolean; onToggle: () => void }) {
   const { t } = useI18n();
   const actionConf = ACTION_CONFIG[log.action] || { icon: Activity, color: 'text-fg-muted', bg: 'bg-fg-subtle/10', labelKey: log.action };
@@ -362,10 +350,6 @@ function TimelineEntry({ log, expanded, onToggle }: { log: AuditLog; expanded: b
     </div>
   );
 }
-
-// ══════════════════════════════════════════════
-// Helpers
-// ══════════════════════════════════════════════
 
 function filteredLogs(logs: AuditLog[], search: string): AuditLog[] {
   if (!search) return logs;
@@ -401,10 +385,6 @@ function exportLogs(logs: AuditLog[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
-// ══════════════════════════════════════════════
-// Empty State
-// ══════════════════════════════════════════════
 
 function EmptyLogs() {
   const { t } = useI18n();
