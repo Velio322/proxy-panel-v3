@@ -4,7 +4,7 @@
 # ProxPanel v3 — Fast, Resilient & Fail-Safe Installer
 # ══════════════════════════════════════════════════════════════
 # One-liner:
-#   bash <(curl -Ls https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh)
+#   bash <(curl -Ls "https://raw.githubusercontent.com/Velio322/proxy-panel-v3/main/install.sh?v=$(date +%s)")
 #
 # Non-interactive usage:
 #   Domain mode:
@@ -63,15 +63,30 @@ on_error() {
 }
 trap 'on_error $? $LINENO "$BASH_COMMAND"' ERR
 
-generate_secret() { openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 64; }
+generate_secret() {
+    local sec
+    sec=$(openssl rand -hex 32 2>/dev/null || true)
+    if [[ -z "$sec" ]]; then
+        sec=$(tr -dc 'a-f0-9' < /dev/urandom | head -c 64 || true)
+    fi
+    echo "$sec"
+}
 
 detect_server_ip() {
     local ip=""
     ip=$(curl -4s --max-time 3 https://api.ipify.org 2>/dev/null || true)
-    [[ -z "$ip" ]] && ip=$(curl -4s --max-time 3 https://ifconfig.me 2>/dev/null || true)
-    [[ -z "$ip" ]] && ip=$(curl -4s --max-time 3 https://icanhazip.com 2>/dev/null || true)
-    [[ -z "$ip" ]] && ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
-    [[ -z "$ip" ]] && ip="127.0.0.1"
+    if [[ -z "$ip" ]]; then
+        ip=$(curl -4s --max-time 3 https://ifconfig.me 2>/dev/null || true)
+    fi
+    if [[ -z "$ip" ]]; then
+        ip=$(curl -4s --max-time 3 https://icanhazip.com 2>/dev/null || true)
+    fi
+    if [[ -z "$ip" ]]; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+    fi
+    if [[ -z "$ip" ]]; then
+        ip="127.0.0.1"
+    fi
     echo "$ip"
 }
 
@@ -125,7 +140,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ──── Root check ────
-[[ $EUID -ne 0 ]] && fail "Please run this installer as root: sudo bash install.sh"
+if [[ $EUID -ne 0 ]]; then
+    fail "Please run this installer as root: sudo bash install.sh"
+fi
 
 # ──── OS check ────
 if ! command -v apt-get &>/dev/null; then
@@ -242,8 +259,10 @@ configure_firewall() {
         local SSH_PORT="22"
         if [[ -f /etc/ssh/sshd_config ]]; then
             local CONF_PORT
-            CONF_PORT=$(grep -E "^Port\s+[0-9]+" /etc/ssh/sshd_config | awk '{print $2}' | head -1 || echo "")
-            [[ -n "$CONF_PORT" ]] && SSH_PORT="$CONF_PORT"
+            CONF_PORT=$(grep -E "^Port\s+[0-9]+" /etc/ssh/sshd_config | awk '{print $2}' | head -1 || true)
+            if [[ -n "$CONF_PORT" ]]; then
+                SSH_PORT="$CONF_PORT"
+            fi
         fi
 
         ufw allow "${SSH_PORT}/tcp" >/dev/null 2>&1 || true
@@ -269,8 +288,10 @@ download_proxy_cores() {
     # 1. Download Xray (background)
     (
         local XRAY_TAG
-        XRAY_TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || echo "v25.1.30")
-        [[ -z "$XRAY_TAG" || "$XRAY_TAG" == "null" ]] && XRAY_TAG="v25.1.30"
+        XRAY_TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || true)
+        if [[ -z "$XRAY_TAG" || "$XRAY_TAG" == "null" ]]; then
+            XRAY_TAG="v25.1.30"
+        fi
         local XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_TAG}/Xray-linux-${ARCH_XRAY}.zip"
         if wget -qO "${TMP_DIR}/xray.zip" "$XRAY_URL"; then
             unzip -qo "${TMP_DIR}/xray.zip" xray -d "${TMP_DIR}/" && \
@@ -278,7 +299,7 @@ download_proxy_cores() {
             chmod +x /usr/local/bin/xray
             echo "[DONE] Xray"
         else
-            echo "[FAIL] Xray"
+            echo "[FAIL] Xray download"
         fi
     ) &
     local PID_XRAY=$!
@@ -286,8 +307,10 @@ download_proxy_cores() {
     # 2. Download sing-box (background)
     (
         local SING_TAG
-        SING_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || echo "v1.11.0")
-        [[ -z "$SING_TAG" || "$SING_TAG" == "null" ]] && SING_TAG="v1.11.0"
+        SING_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || true)
+        if [[ -z "$SING_TAG" || "$SING_TAG" == "null" ]]; then
+            SING_TAG="v1.11.0"
+        fi
         local SING_CLEAN="${SING_TAG#v}"
         local SING_URL="https://github.com/SagerNet/sing-box/releases/download/${SING_TAG}/sing-box-${SING_CLEAN}-linux-${ARCH_SING}.tar.gz"
         if wget -qO "${TMP_DIR}/sing.tar.gz" "$SING_URL"; then
@@ -301,7 +324,7 @@ download_proxy_cores() {
                 echo "[FAIL] sing-box extraction"
             fi
         else
-            echo "[FAIL] sing-box"
+            echo "[FAIL] sing-box download"
         fi
     ) &
     local PID_SING=$!
@@ -309,12 +332,14 @@ download_proxy_cores() {
     # 3. Download Mieru (background)
     (
         local MIERU_TAG
-        MIERU_TAG=$(curl -s https://api.github.com/repos/enfein/mieru/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || echo "v3.12.0")
-        [[ -z "$MIERU_TAG" || "$MIERU_TAG" == "null" ]] && MIERU_TAG="v3.12.0"
+        MIERU_TAG=$(curl -s https://api.github.com/repos/enfein/mieru/releases/latest 2>/dev/null | jq -r '.tag_name // empty' || true)
+        if [[ -z "$MIERU_TAG" || "$MIERU_TAG" == "null" ]]; then
+            MIERU_TAG="v3.12.0"
+        fi
         local MIERU_CLEAN="${MIERU_TAG#v}"
         local MIERU_URL="https://github.com/enfein/mieru/releases/download/${MIERU_TAG}/mieru_v${MIERU_CLEAN}_linux_${ARCH_MIERU}.tar.gz"
         if wget -qO "${TMP_DIR}/mieru.tar.gz" "$MIERU_URL" 2>/dev/null; then
-            tar -xzf "${TMP_DIR}/mieru.tar.gz" -C "${TMP_DIR}/" 2>/dev/null
+            tar -xzf "${TMP_DIR}/mieru.tar.gz" -C "${TMP_DIR}/" 2>/dev/null || true
             local M_PATH
             M_PATH=$(find "${TMP_DIR}" -maxdepth 2 -name 'mieru' -type f 2>/dev/null | head -1)
             if [[ -n "$M_PATH" ]]; then
@@ -337,9 +362,15 @@ download_proxy_cores() {
         setcap 'cap_net_bind_service=+ep' /usr/local/bin/sing-box 2>/dev/null || true
     fi
 
-    [[ -x /usr/local/bin/xray ]] && log "Xray-core ready: $(/usr/local/bin/xray version 2>&1 | head -1)"
-    [[ -x /usr/local/bin/sing-box ]] && log "sing-box ready: $(/usr/local/bin/sing-box version 2>&1 | head -1)"
-    [[ -x /usr/local/bin/mieru ]] && log "Mieru ready: $(/usr/local/bin/mieru version 2>&1 | head -1 || echo 'mieru')"
+    if [[ -x /usr/local/bin/xray ]]; then
+        log "Xray-core ready: $(/usr/local/bin/xray version 2>&1 | head -1)"
+    fi
+    if [[ -x /usr/local/bin/sing-box ]]; then
+        log "sing-box ready: $(/usr/local/bin/sing-box version 2>&1 | head -1)"
+    fi
+    if [[ -x /usr/local/bin/mieru ]]; then
+        log "Mieru ready: $(/usr/local/bin/mieru version 2>&1 | head -1 || echo 'mieru')"
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -414,22 +445,30 @@ install_panel() {
             if [[ -z "$ADMIN_EMAIL" ]]; then
                 safe_read "  Admin email (for TLS certificate):        " ADMIN_EMAIL
             fi
-            [[ -z "$PANEL_DOMAIN" ]] && fail "Domain is required for domain access mode"
-            [[ -z "$ADMIN_EMAIL"  ]] && fail "Email is required for Let's Encrypt TLS certificate"
+            if [[ -z "$PANEL_DOMAIN" ]]; then
+                fail "Domain is required for domain access mode"
+            fi
+            if [[ -z "$ADMIN_EMAIL" ]]; then
+                fail "Email is required for Let's Encrypt TLS certificate"
+            fi
             PANEL_URL="https://${PANEL_DOMAIN}"
             ;;
         2|ip)
             ACCESS_TYPE="ip"
             PANEL_DOMAIN="$SERVER_IP"
             PANEL_URL="https://${SERVER_IP}"
-            ADMIN_EMAIL="${ADMIN_EMAIL:-admin@proxpanel.local}"
+            if [[ -z "$ADMIN_EMAIL" ]]; then
+                ADMIN_EMAIL="admin@proxpanel.local"
+            fi
             echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Direct HTTPS)"
             ;;
         3|http)
             ACCESS_TYPE="http"
             PANEL_DOMAIN="$SERVER_IP"
             PANEL_URL="http://${SERVER_IP}"
-            ADMIN_EMAIL="${ADMIN_EMAIL:-admin@proxpanel.local}"
+            if [[ -z "$ADMIN_EMAIL" ]]; then
+                ADMIN_EMAIL="admin@proxpanel.local"
+            fi
             echo -e "  Using Server Public IP: ${BOLD}${SERVER_IP}${NC} (Plain HTTP)"
             ;;
         *)
@@ -440,14 +479,20 @@ install_panel() {
     # ──── 3. Admin Credentials ────
     if [[ -z "$ADMIN_USER" ]]; then
         safe_read "  Admin username [admin]:                   " ADMIN_USER
-        ADMIN_USER="${ADMIN_USER:-admin}"
+        if [[ -z "$ADMIN_USER" ]]; then
+            ADMIN_USER="admin"
+        fi
     fi
     if [[ -z "$ADMIN_PASS" ]]; then
         safe_read "  Admin password (min 8 chars):             " ADMIN_PASS true
     fi
 
-    [[ -z "$ADMIN_PASS" ]] && fail "Admin password is required"
-    [[ ${#ADMIN_PASS} -lt 8 ]] && fail "Password must be at least 8 characters long"
+    if [[ -z "$ADMIN_PASS" ]]; then
+        fail "Admin password is required"
+    fi
+    if [[ ${#ADMIN_PASS} -lt 8 ]]; then
+        fail "Password must be at least 8 characters long"
+    fi
 
     # ──── System Dependencies ────
     step "PANEL 1/7" "Installing system dependencies and Docker Engine..."
@@ -772,8 +817,12 @@ case "$INSTALL_MODE" in
         if [[ -z "$NODE_SECRET" ]]; then
             safe_read "  Node RPC Secret (from Panel Settings / Installation): " NODE_SECRET
         fi
-        [[ -z "$MASTER_URL"  ]] && fail "Master URL is required"
-        [[ -z "$NODE_SECRET" ]] && fail "Node secret is required"
+        if [[ -z "$MASTER_URL" ]]; then
+            fail "Master URL is required"
+        fi
+        if [[ -z "$NODE_SECRET" ]]; then
+            fail "Node secret is required"
+        fi
         MASTER_URL="${MASTER_URL%/}"
         install_node "$MASTER_URL" "$NODE_SECRET"
         ;;
@@ -782,7 +831,9 @@ case "$INSTALL_MODE" in
         install_panel
         echo ""
         step "ALL-IN-ONE" "Setting up local Node Worker on Master server..."
-        [[ -z "$RPC_SECRET" ]] && fail "Internal error: RPC_SECRET not generated during Panel install"
+        if [[ -z "$RPC_SECRET" ]]; then
+            fail "Internal error: RPC_SECRET not generated during Panel install"
+        fi
         install_node "http://127.0.0.1:3000" "$RPC_SECRET"
 
         step "NODE REG" "Registering local Node Worker in Master Database..."
